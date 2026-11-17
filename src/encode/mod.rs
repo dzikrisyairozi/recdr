@@ -4,6 +4,7 @@ pub mod gif;
 
 use image::RgbaImage;
 
+use crate::draw;
 use crate::error::Result;
 use crate::model::{FrameEntry, Manifest};
 use crate::store::RecordingDir;
@@ -60,9 +61,49 @@ pub fn timeline(manifest: &Manifest) -> Vec<OutFrame> {
     out
 }
 
-/// The image shown for one piece of the timeline.
+/// The image shown for one piece of the timeline: the stored frame plus its click
+/// rings. Stored frames on disk stay clean.
 pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
-    dir.load_frame(&frame.entry)
+    let mut image = dir.load_frame(&frame.entry)?;
+    for &(x, y) in &frame.rings {
+        draw::ring(&mut image, x, y, 14);
+    }
+    Ok(image)
+}
+
+/// A recording directory with one solid 64x48 frame at 0 ms, for encoder tests.
+#[cfg(test)]
+pub(crate) fn one_frame(name: &str, clicks: Vec<crate::model::Click>) -> (RecordingDir, Manifest) {
+    use crate::model::{Frame, StopReason};
+    let out = std::env::temp_dir().join(format!("recdr-unit-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let dir = RecordingDir::create(&out, 0).unwrap();
+    let mut writer = dir.frame_writer(64, 48).unwrap();
+    let rgba = [0, 0, 0, 255].repeat(64 * 48);
+    writer
+        .push(
+            Frame {
+                width: 64,
+                height: 48,
+                rgba,
+            },
+            0,
+        )
+        .unwrap();
+    let manifest = Manifest {
+        id: String::new(),
+        width: 64,
+        height: 48,
+        fps: 15,
+        started_at_unix_ms: 0,
+        duration_ms: 1000,
+        frames: writer.finish(),
+        marks: Vec::new(),
+        clicks,
+        stop_reason: StopReason::Stopped,
+        dropped_frames: 0,
+    };
+    (dir, manifest)
 }
 
 #[cfg(test)]
@@ -116,5 +157,23 @@ mod tests {
         let rings: Vec<usize> = pieces.iter().map(|p| p.rings.len()).collect();
         assert_eq!(rings, [0, 1, 0]);
         assert_eq!(pieces[1].rings, [(5, 6)]);
+    }
+
+    #[test]
+    fn render_draws_rings_without_touching_the_stored_frame() {
+        let (dir, manifest) = one_frame("render", Vec::new());
+        let entry = manifest.frames[0].clone();
+        let before = std::fs::read(dir.frame_path(&entry)).unwrap();
+        let piece = OutFrame {
+            entry: entry.clone(),
+            t_ms: 0,
+            duration_ms: 100,
+            rings: vec![(32, 24)],
+        };
+        assert_ne!(
+            render(&dir, &piece).unwrap(),
+            dir.load_frame(&entry).unwrap()
+        );
+        assert_eq!(std::fs::read(dir.frame_path(&entry)).unwrap(), before);
     }
 }

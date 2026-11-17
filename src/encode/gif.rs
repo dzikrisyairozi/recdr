@@ -31,3 +31,35 @@ fn gif_side(pixels: u32) -> Result<u16> {
     u16::try_from(pixels)
         .map_err(|_| Error::EncodeFailed(format!("{pixels} pixels is too large for a GIF")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encode::one_frame;
+    use crate::model::Click;
+
+    fn frame_count(path: &std::path::Path) -> usize {
+        let mut decoder = gif::DecodeOptions::new()
+            .read_info(File::open(path).unwrap())
+            .unwrap();
+        let mut count = 0;
+        while decoder.read_next_frame().unwrap().is_some() {
+            count += 1;
+        }
+        count
+    }
+
+    #[test]
+    fn a_click_adds_frames_for_its_ring() {
+        let click = Click {
+            t_ms: 200,
+            x: 10,
+            y: 10,
+            button: "left".into(),
+        };
+        let (dir, manifest) = one_frame("gif-click", vec![click]);
+        assert_eq!(frame_count(&encode(&dir, &manifest).unwrap()), 3);
+        let (dir, manifest) = one_frame("gif-plain", Vec::new());
+        assert_eq!(frame_count(&encode(&dir, &manifest).unwrap()), 1);
+    }
+}

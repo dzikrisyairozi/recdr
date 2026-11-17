@@ -82,6 +82,15 @@ pub fn contact_sheet(
         let fits = (tile_width.saturating_sub(8) / 16) as usize;
         let label: String = label.chars().take(fits).collect();
         draw::text(&mut sheet, left + 4, top + tile_height + 2, &label, 2);
+        for click in manifest.clicks.iter().filter(|c| in_span(c.t_ms)) {
+            let scale = |v: i32, side: u32, full: u32| v * side as i32 / full.max(1) as i32;
+            draw::ring(
+                &mut sheet,
+                left as i32 + scale(click.x, tile_width, manifest.width),
+                top as i32 + scale(click.y, tile_height, manifest.height),
+                10,
+            );
+        }
     }
 
     let path = dir.contact_sheet_path();

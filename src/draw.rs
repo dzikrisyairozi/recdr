@@ -31,9 +31,33 @@ pub fn text(image: &mut RgbaImage, x: u32, y: u32, text: &str, scale: u32) {
     }
 }
 
+/// A red circle outline 3 pixels thick, used to show where a click happened.
+pub fn ring(image: &mut RgbaImage, cx: i32, cy: i32, radius: i32) {
+    let red = Rgba([255, 64, 64, 255]);
+    let (outer, inner) = (radius * radius, (radius - 3).max(0).pow(2));
+    for y in cy - radius..=cy + radius {
+        for x in cx - radius..=cx + radius {
+            let d = (x - cx).pow(2) + (y - cy).pow(2);
+            let on_image =
+                x >= 0 && y >= 0 && (x as u32) < image.width() && (y as u32) < image.height();
+            if on_image && inner <= d && d <= outer {
+                image.put_pixel(x as u32, y as u32, red);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ring_is_an_outline() {
+        let mut image = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        ring(&mut image, 32, 32, 14);
+        assert_eq!(image.get_pixel(32, 32).0, [0, 0, 0, 255]);
+        assert_eq!(image.get_pixel(45, 32).0, [255, 64, 64, 255]);
+    }
 
     #[test]
     fn text_stays_inside_its_cell() {

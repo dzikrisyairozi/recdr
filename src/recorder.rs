@@ -7,9 +7,10 @@ use crate::analyze;
 use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
+use crate::input::ClickHook;
 use crate::model::{
-    CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, State, Status,
-    StopReason,
+    CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind, State,
+    Status, StopReason,
 };
 use crate::store::RecordingDir;
 use crate::time;
@@ -71,6 +72,11 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         ),
         None => None,
     };
+    let hook = if options.clicks && !matches!(state.resolved.kind, ResolvedKind::Fake(_)) {
+        Some(ClickHook::start()?)
+    } else {
+        None
+    };
     let mut command_exit_code = None;
 
     let interval_ms = u64::from(1000 / options.fps);
@@ -121,6 +127,14 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             .status();
         let _ = child.wait();
     }
+    let clicks = hook.map_or_else(Vec::new, |hook| {
+        hook.finish(
+            state.resolved.origin,
+            state.width,
+            state.height,
+            state.started_at_unix_ms,
+        )
+    });
 
     let marks = dir
         .read_marks()?
@@ -140,7 +154,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         duration_ms,
         frames: writer.finish(),
         marks,
-        clicks: Vec::new(),
+        clicks,
         stop_reason,
         dropped_frames,
     };

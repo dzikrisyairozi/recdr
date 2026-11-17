@@ -274,7 +274,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `tests/desktop.rs`, `src/capture/windows.rs`
   - Scope: S
 
-- [ ] **Task 13: Cursor flag, click hook and click rings**
+- [x] **Task 13: Cursor flag, click hook and click rings**
   - Description: Click capture, and rings in the GIF and on the contact sheet. `--no-cursor` and `--no-click-highlight` already parse and reach `RecordOptions` since Task 4.
   - Steps:
     - `src/input.rs`: `ClickHook`.
