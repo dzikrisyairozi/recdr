@@ -129,13 +129,13 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
 
 ### Checkpoint A
 
-- [ ] `cargo test` and `cargo test --test desktop -- --ignored` pass.
-- [ ] A real monitor recording leaves PNG frames and a manifest under `.recdr/`.
-- [ ] Review with the owner before Phase 2. If Task 5 needed the fallback named in the plan's risk table, say so.
+- [x] `cargo test` and `cargo test --test desktop -- --ignored` pass.
+- [x] A real monitor recording leaves PNG frames and a manifest under `.recdr/`.
+- [x] Review with the owner before Phase 2. If Task 5 needed the fallback named in the plan's risk table, say so.
 
 ## Phase 2: outputs
 
-- [ ] **Task 6: GIF encoding**
+- [x] **Task 6: GIF encoding**
   - Description: A finished recording gets `recording.gif`.
   - Steps:
     - Add `gif` to `Cargo.toml`.

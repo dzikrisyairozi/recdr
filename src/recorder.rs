@@ -3,8 +3,11 @@
 use std::time::{Duration, Instant};
 
 use crate::capture;
+use crate::encode;
 use crate::error::{Error, Result};
-use crate::model::{CaptureEvent, Manifest, Mark, RecordingResult, State, Status, StopReason};
+use crate::model::{
+    CaptureEvent, Format, Manifest, Mark, RecordingResult, State, Status, StopReason,
+};
 use crate::store::RecordingDir;
 use crate::time;
 
@@ -118,6 +121,11 @@ fn finalize(
     command_exit_code: Option<i32>,
 ) -> Result<RecordingResult> {
     let manifest_path = dir.write_manifest(&manifest)?;
+    let gif = if state.options.formats.contains(&Format::Gif) {
+        Some(encode::gif::encode(dir, &manifest)?)
+    } else {
+        None
+    };
     let result = RecordingResult {
         id: manifest.id.clone(),
         dir: dir.path().to_path_buf(),
@@ -130,7 +138,7 @@ fn finalize(
         dropped_frames: manifest.dropped_frames,
         keyframes: Vec::new(),
         marks: manifest.marks.clone(),
-        gif: None,
+        gif,
         mp4: None,
         contact_sheet: None,
         diff: None,

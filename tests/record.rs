@@ -141,3 +141,21 @@ fn output_root_that_is_a_file_is_io_error() {
         .unwrap();
     assert_eq!(error_code(&output), (Some(1), "io_error".into()));
 }
+
+#[test]
+fn three_seconds_make_a_looping_gif_of_the_same_length() {
+    let (output, _) = record("moving", "gif-3s", &["--monitor", "0", "--duration", "3s"]);
+    let result = ok(&output);
+    let path = result["gif"].as_str().expect("gif in result");
+    let mut options = gif::DecodeOptions::new();
+    options.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = options
+        .read_info(std::fs::File::open(path).unwrap())
+        .unwrap();
+    assert_eq!((decoder.width(), decoder.height()), (320, 240));
+    let mut hundredths = 0u64;
+    while let Some(frame) = decoder.read_next_frame().unwrap() {
+        hundredths += u64::from(frame.delay);
+    }
+    assert!((250..=350).contains(&hundredths), "{hundredths} hundredths");
+}
