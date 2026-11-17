@@ -9,8 +9,8 @@ use crate::analyze;
 use crate::capture;
 use crate::error::{Error, Result};
 use crate::model::{
-    FrameList, FrameSelection, MonitorList, RecordOptions, RecordingResult, StartInfo, State,
-    Status, StatusEntry, StatusList, Target, WindowList,
+    FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions, RecordingResult, StartInfo,
+    State, Status, StatusEntry, StatusList, Target, WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -89,6 +89,19 @@ pub fn stop(out: &Path, id: &str) -> Result<RecordingResult> {
     }
     dir.request_stop()?;
     await_result(&dir)
+}
+
+/// Labels the current moment of a running recording.
+pub fn mark(out: &Path, id: &str, label: &str) -> Result<MarkAck> {
+    let dir = RecordingDir::open(out, id)?;
+    if derived_status(&dir)? != Status::Recording {
+        return Err(Error::RecordingNotActive(id.to_owned()));
+    }
+    dir.append_mark(time::now_unix_ms(), label)?;
+    Ok(MarkAck {
+        id: id.to_owned(),
+        label: label.to_owned(),
+    })
 }
 
 /// One recording, or every recording under `out`.

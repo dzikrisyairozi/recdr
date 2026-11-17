@@ -172,3 +172,40 @@ fn status_without_id_lists_every_recording() {
     let list = ok(&run("moving", &out, &["status"]));
     assert_eq!(list["recordings"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn mark_lands_at_the_time_it_was_made() {
+    let out = out_dir("mark");
+    let id = start("moving", &out, &[]);
+    sleep(Duration::from_millis(500));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let ack = ok(&run("moving", &out, &["mark", &id, "clicked submit"]));
+    assert_eq!(ack["label"], "clicked submit");
+    let result = ok(&run("moving", &out, &["stop", &id]));
+    let marks = result["marks"].as_array().unwrap();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0]["label"], "clicked submit");
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
+            .unwrap();
+    let since_start = now - manifest["started_at_unix_ms"].as_u64().unwrap();
+    let t_ms = marks[0]["t_ms"].as_u64().unwrap();
+    assert!(
+        (since_start..=since_start + 1000).contains(&t_ms),
+        "{t_ms} not within 1 s after {since_start}"
+    );
+
+    let (code, late) = error(&run("moving", &out, &["mark", &id, "late"]));
+    assert_eq!(
+        (code, late["code"].as_str()),
+        (Some(1), Some("recording_not_active"))
+    );
+    let (code, error) = error(&run("moving", &out, &["mark", "no-such-id", "x"]));
+    assert_eq!(
+        (code, error["code"].as_str()),
+        (Some(1), Some("recording_not_found"))
+    );
+}

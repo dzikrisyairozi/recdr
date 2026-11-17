@@ -225,7 +225,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `src/platform.rs`, `src/recorder.rs`, `src/control.rs`, `src/cli.rs`, `tests/control.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 10: `recdr mark`**
+- [x] **Task 10: `recdr mark`**
   - Description: Labelled markers during a recording, shown on the contact sheet.
   - Steps:
     - `src/control.rs`: `mark`.

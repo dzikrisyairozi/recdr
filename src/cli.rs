@@ -29,6 +29,8 @@ enum Command {
     Start(StartCmd),
     /// Stop a background recording and print the result
     Stop(IdCmd),
+    /// Label the current moment of a background recording
+    Mark(MarkCmd),
     /// Show one recording, or every recording under the output root
     Status(StatusCmd),
     /// Print paths of stored frames of a finished recording
@@ -106,6 +108,17 @@ struct StartCmd {
 struct IdCmd {
     /// Recording id
     id: String,
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct MarkCmd {
+    /// Recording id
+    id: String,
+    /// Text shown under the frame on the contact sheet
+    label: String,
     /// Output root [default: .recdr]
     #[arg(long)]
     out: Option<PathBuf>,
@@ -192,6 +205,9 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
         Command::Stop(cmd) => {
             text(request::resolve_out(cmd.out).and_then(|out| control::stop(&out, &cmd.id)))
         }
+        Command::Mark(cmd) => text(
+            request::resolve_out(cmd.out).and_then(|out| control::mark(&out, &cmd.id, &cmd.label)),
+        ),
         Command::Status(cmd) => text(
             request::resolve_out(cmd.out).and_then(|out| control::status(&out, cmd.id.as_deref())),
         ),
