@@ -1,5 +1,6 @@
 //! One recording, from the first frame to `result.json`.
 
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::analyze;
@@ -58,6 +59,20 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     let mut writer = dir.frame_writer(first.width, first.height)?;
     writer.push(first, 0)?;
 
+    // `cmd /C` because npm and npx are .cmd files that cannot be started directly. The
+    // command's stdout goes to our stderr so our stdout carries only the result JSON.
+    let mut child = match &options.command {
+        Some(command) => Some(
+            Command::new("cmd")
+                .arg("/C")
+                .args(command)
+                .stdout(Stdio::from(std::io::stderr()))
+                .spawn()?,
+        ),
+        None => None,
+    };
+    let mut command_exit_code = None;
+
     let interval_ms = u64::from(1000 / options.fps);
     let mut last_accepted_ms = 0;
     let (stop_reason, duration_ms) = loop {
@@ -76,6 +91,9 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             Some(StopReason::WindowClosed)
         } else if dir.stop_requested() {
             Some(StopReason::Stopped)
+        } else if let Some(status) = child.as_mut().map(Child::try_wait).transpose()?.flatten() {
+            command_exit_code = status.code();
+            Some(StopReason::CommandExited)
         } else if options.duration_ms.is_some_and(|d| elapsed_ms >= d) {
             Some(StopReason::DurationReached)
         } else if elapsed_ms >= options.max_duration_ms {
@@ -92,6 +110,17 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
 
     let dropped_frames = source.dropped();
     drop(source);
+    if let Some(mut child) = child
+        && stop_reason != StopReason::CommandExited
+    {
+        // Child::kill would end cmd.exe and leave the real command running.
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = child.wait();
+    }
 
     let marks = dir
         .read_marks()?
@@ -115,7 +144,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         stop_reason,
         dropped_frames,
     };
-    Ok((manifest, None))
+    Ok((manifest, command_exit_code))
 }
 
 fn finalize(

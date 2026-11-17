@@ -239,7 +239,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `src/control.rs`, `src/cli.rs`, `tests/control.rs`
   - Scope: S
 
-- [ ] **Task 11: Wrap a command**
+- [x] **Task 11: Wrap a command**
   - Description: `recdr record <target> -- <command...>` records for as long as the command runs.
   - Steps:
     - `src/cli.rs`: `RecordCmd.command` with `#[arg(last = true)]`; an empty vector becomes `None` in the request.

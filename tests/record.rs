@@ -10,9 +10,9 @@ fn record(fake: &str, name: &str, args: &[&str]) -> (Output, std::path::PathBuf)
     let output = recdr()
         .env("RECDR_FAKE_SOURCE", fake)
         .arg("record")
-        .args(args)
         .arg("--out")
         .arg(&out)
+        .args(args)
         .output()
         .unwrap();
     (output, out)
@@ -190,4 +190,89 @@ fn static_screen_has_one_keyframe() {
         &["--monitor", "0", "--duration", "1s"],
     );
     assert_eq!(ok(&output)["keyframes"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn wrapped_command_sets_the_length_and_keeps_stdout_clean() {
+    let (output, _) = record(
+        "moving",
+        "wrap",
+        &[
+            "--monitor",
+            "0",
+            "--",
+            "cmd",
+            "/c",
+            "echo hi & ping -n 3 127.0.0.1 >nul",
+        ],
+    );
+    let result = ok(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(result["stop_reason"], "command_exited", "{stderr}");
+    assert_eq!(result["command_exit_code"], 0, "{stderr}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("hi"));
+    let duration = result["duration_ms"].as_u64().unwrap();
+    assert!((1500..=4000).contains(&duration), "{duration}");
+}
+
+#[test]
+fn wrapped_command_exit_code_is_reported_not_returned() {
+    let (output, _) = record(
+        "moving",
+        "wrap-exit",
+        &["--monitor", "0", "--", "cmd", "/c", "exit 3"],
+    );
+    assert_eq!(ok(&output)["command_exit_code"], 3);
+}
+
+#[test]
+fn time_cap_kills_the_whole_command_tree() {
+    let begun = std::time::Instant::now();
+    let (output, _) = record(
+        "moving",
+        "wrap-cap",
+        &[
+            "--monitor",
+            "0",
+            "--max-duration",
+            "1s",
+            "--",
+            "ping",
+            "-n",
+            "30",
+            "127.0.0.1",
+        ],
+    );
+    assert!(
+        begun.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        begun.elapsed()
+    );
+    let result = ok(&output);
+    assert_eq!(
+        result["stop_reason"],
+        "cap_reached",
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(result.get("command_exit_code").is_none());
+}
+
+#[test]
+fn duration_and_command_together_is_usage() {
+    let (output, _) = record(
+        "moving",
+        "wrap-usage",
+        &[
+            "--monitor",
+            "0",
+            "--duration",
+            "1s",
+            "--",
+            "cmd",
+            "/c",
+            "echo",
+        ],
+    );
+    assert_eq!(error_code(&output), (Some(2), "usage".into()));
 }

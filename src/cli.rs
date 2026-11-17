@@ -23,7 +23,7 @@ enum Command {
     Windows,
     /// List monitors
     Monitors,
-    /// Record for a fixed time, then print the result
+    /// Record for a fixed time or while a command runs, then print the result
     Record(RecordCmd),
     /// Start recording in the background and print its id
     Start(StartCmd),
@@ -96,6 +96,9 @@ struct RecordCmd {
     /// Stop after this long, e.g. 10s
     #[arg(long)]
     duration: Option<String>,
+    /// Record while this command runs, e.g. -- npm test
+    #[arg(last = true)]
+    command: Vec<String>,
 }
 
 #[derive(Args)]
@@ -192,6 +195,7 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
         Command::Record(cmd) => {
             let request = RecordRequest {
                 duration: cmd.duration,
+                command: (!cmd.command.is_empty()).then_some(cmd.command),
                 ..cmd.flags.into_request()
             };
             text(request.into_options().and_then(control::record))
