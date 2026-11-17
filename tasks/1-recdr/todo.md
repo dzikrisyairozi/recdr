@@ -61,7 +61,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `Cargo.toml`, `Cargo.lock`, `src/main.rs`, `src/lib.rs`, `src/error.rs`, `src/model.rs`, `src/platform.rs`, `src/capture/mod.rs`, `src/capture/windows.rs`, `src/control.rs`, `src/cli.rs`, `tests/desktop.rs`
   - Scope: L by file count; four of the files get one or two lines
 
-- [ ] **Task 3: The recording directory**
+- [x] **Task 3: The recording directory**
   - Description: Everything that reads or writes a recording directory, tested without any capture.
   - Steps:
     - Add `image` to `Cargo.toml`; add `From<image::ImageError>` in `src/error.rs`.

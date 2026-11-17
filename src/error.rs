@@ -84,6 +84,12 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<image::ImageError> for Error {
+    fn from(e: image::ImageError) -> Self {
+        Error::Io(std::io::Error::other(e))
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
