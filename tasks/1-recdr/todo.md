@@ -309,7 +309,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `src/encode/mod.rs`, `src/encode/ffmpeg.rs`, `src/control.rs`, `src/recorder.rs`, `tests/record.rs`
   - Scope: S
 
-- [ ] **Task 15: MCP server**
+- [x] **Task 15: MCP server**
   - Description: `recdr mcp` with the eight tools.
   - Steps:
     - Add `rmcp`, `tokio`, `schemars` and `base64` to `Cargo.toml`.

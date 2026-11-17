@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
@@ -17,7 +18,7 @@ pub const FAKE_SOURCE_ENV: &str = "RECDR_FAKE_SOURCE";
 
 /// What a user asked for, before validation. Every field is optional so the CLI
 /// and the MCP server can fill it from their own input shapes.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct RecordRequest {
     pub window_id: Option<u64>,
@@ -34,6 +35,7 @@ pub struct RecordRequest {
     pub out: Option<PathBuf>,
     pub duration: Option<String>,
     #[serde(skip)]
+    #[schemars(skip)]
     pub command: Option<Vec<String>>,
 }
 

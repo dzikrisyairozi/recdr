@@ -9,10 +9,3 @@ fn unknown_flag_is_a_usage_error_on_stderr() {
     assert!(output.stdout.is_empty());
     assert_eq!(json(&output.stderr)["error"]["code"], "usage");
 }
-
-#[test]
-fn mcp_is_not_built_yet() {
-    let output = recdr().arg("mcp").output().unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(json(&output.stderr)["error"]["code"], "usage");
-}
