@@ -210,3 +210,21 @@ fn minimized_window_is_refused() {
         (Some(1), Some("target_minimized"))
     );
 }
+
+/// Success criterion 15. Play a full-screen video on monitor 0 while this runs.
+#[test]
+#[ignore]
+fn criterion_15_dropped_frames() {
+    let result = ok(&record(
+        "criterion-15",
+        &["--monitor", "0", "--fps", "15", "--duration", "30s"],
+    ));
+    let stored = result["frames_stored"].as_u64().unwrap();
+    let dropped = result["dropped_frames"].as_u64().unwrap();
+    println!("frames_stored {stored}, dropped_frames {dropped}");
+    assert!(
+        dropped * 20 <= stored + dropped,
+        "{dropped} dropped of {} captured",
+        stored + dropped
+    );
+}
