@@ -256,13 +256,13 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
 
 ### Checkpoint C
 
-- [ ] `cargo test` passes.
-- [ ] On the desktop: `start --window-id`, `mark`, `stop` on a real browser window gives a GIF and a contact sheet that shows the label (user stories 1 and 5; success criteria 3, 4, 5, 10).
-- [ ] Review with the owner before Phase 4.
+- [x] `cargo test` passes.
+- [x] On the desktop: `start --window-id`, `mark`, `stop` on a real browser window gives a GIF and a contact sheet that shows the label (user stories 1 and 5; success criteria 3, 4, 5, 10).
+- [x] Review with the owner before Phase 4.
 
 ## Phase 4: the rest of the surface
 
-- [ ] **Task 12: Window close and minimize on the real desktop**
+- [x] **Task 12: Window close and minimize on the real desktop**
   - Description: Prove on a real window the behavior that Tasks 4 and 9 proved with the synthetic source.
   - Steps:
     - `tests/desktop.rs`: the two checks below. No source change is expected; if one is needed it is in `src/capture/windows.rs`.

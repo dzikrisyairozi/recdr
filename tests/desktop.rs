@@ -165,3 +165,48 @@ fn detached_recorder_captures_the_desktop() {
         .unwrap();
     assert!(ok(&stopped)["frames_stored"].as_u64().unwrap() >= 1);
 }
+
+#[test]
+#[ignore]
+fn closing_the_window_ends_the_recording() {
+    let title = title("close");
+    let out = out_dir("close");
+    let mut child = test_window(&title, false);
+    wait_for_window(&title);
+    let started = recdr()
+        .args(["start", "--window", &title, "--out"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let id = ok(&started)["id"].as_str().unwrap().to_owned();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let _ = child.kill();
+    let _ = child.wait();
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    let stopped = recdr()
+        .args(["stop", &id, "--out"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let result = ok(&stopped);
+    assert_eq!(result["stop_reason"], "window_closed");
+    let gif = std::fs::File::open(result["gif"].as_str().unwrap()).unwrap();
+    let mut decoder = gif::DecodeOptions::new().read_info(gif).unwrap();
+    assert!(decoder.read_next_frame().unwrap().is_some());
+}
+
+#[test]
+#[ignore]
+fn minimized_window_is_refused() {
+    let title = title("min");
+    let mut child = test_window(&title, true);
+    wait_for_window(&title);
+    let output = record("min", &["--window", &title, "--duration", "1s"]);
+    let _ = child.kill();
+    let _ = child.wait();
+    let (code, error) = error(&output);
+    assert_eq!(
+        (code, error["code"].as_str()),
+        (Some(1), Some("target_minimized"))
+    );
+}
