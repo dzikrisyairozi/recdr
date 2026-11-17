@@ -17,13 +17,13 @@ pub trait CaptureSource {
     fn dropped(&self) -> u64;
 }
 
-pub fn open(resolved: &ResolvedTarget, _fps: u32, _cursor: bool) -> Result<Box<dyn CaptureSource>> {
+pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool) -> Result<Box<dyn CaptureSource>> {
     match resolved.kind {
         ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
             "the synthetic source is broken".into(),
         )),
         ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
-        _ => Err(Error::CaptureFailed("no capture backend".into())),
+        _ => Ok(Box::new(windows::WgcSource::open(resolved, fps, cursor)?)),
     }
 }
 

@@ -108,7 +108,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `src/lib.rs`, `src/capture/mod.rs`, `src/capture/fake.rs`, `src/request.rs`, `src/recorder.rs`, `src/control.rs`, `src/cli.rs`, `tests/record.rs`
   - Scope: L. It is one path and cannot be cut smaller without leaving a task that records nothing.
 
-- [ ] **Task 5: WGC backend for monitor, region and window**
+- [x] **Task 5: WGC backend for monitor, region and window**
   - Description: Real capture. This is the highest-risk task, so it comes before any output format.
   - Steps:
     - `src/capture/windows.rs`: `WgcSource`, its `CaptureSource` impl and its `Drop`.
