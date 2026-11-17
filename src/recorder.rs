@@ -74,6 +74,8 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         }
         let reason = if closed {
             Some(StopReason::WindowClosed)
+        } else if dir.stop_requested() {
+            Some(StopReason::Stopped)
         } else if options.duration_ms.is_some_and(|d| elapsed_ms >= d) {
             Some(StopReason::DurationReached)
         } else if elapsed_ms >= options.max_duration_ms {

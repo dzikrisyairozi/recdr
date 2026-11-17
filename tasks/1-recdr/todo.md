@@ -202,7 +202,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
 
 ## Phase 3: control
 
-- [ ] **Task 9: `recdr start`, `stop` and `status`**
+- [x] **Task 9: `recdr start`, `stop` and `status`**
   - Description: A recording that outlives the command that started it.
   - Steps:
     - `src/platform.rs`: `process_alive`, `spawn_detached`.

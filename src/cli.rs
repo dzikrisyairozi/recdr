@@ -25,10 +25,19 @@ enum Command {
     Monitors,
     /// Record for a fixed time, then print the result
     Record(RecordCmd),
+    /// Start recording in the background and print its id
+    Start(StartCmd),
+    /// Stop a background recording and print the result
+    Stop(IdCmd),
+    /// Show one recording, or every recording under the output root
+    Status(StatusCmd),
     /// Print paths of stored frames of a finished recording
     Frames(FramesCmd),
     /// Run the MCP server on stdio
     Mcp,
+    /// The background recorder that `start` spawns
+    #[command(name = "_recorder", hide = true)]
+    Recorder { dir: PathBuf },
 }
 
 /// Exactly one of these picks what to record.
@@ -85,6 +94,30 @@ struct RecordCmd {
     /// Stop after this long, e.g. 10s
     #[arg(long)]
     duration: Option<String>,
+}
+
+#[derive(Args)]
+struct StartCmd {
+    #[command(flatten)]
+    flags: RecordFlags,
+}
+
+#[derive(Args)]
+struct IdCmd {
+    /// Recording id
+    id: String,
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct StatusCmd {
+    /// Recording id; every recording when left out
+    id: Option<String>,
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -150,6 +183,20 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
             };
             text(request.into_options().and_then(control::record))
         }
+        Command::Start(cmd) => text(
+            cmd.flags
+                .into_request()
+                .into_options()
+                .and_then(control::start),
+        ),
+        Command::Stop(cmd) => {
+            text(request::resolve_out(cmd.out).and_then(|out| control::stop(&out, &cmd.id)))
+        }
+        Command::Status(cmd) => text(
+            request::resolve_out(cmd.out).and_then(|out| control::status(&out, cmd.id.as_deref())),
+        ),
+        // The recorder reports its own failure into the log; JSON there would bury it.
+        Command::Recorder { dir } => return i32::from(control::run_recorder(dir).is_err()),
         Command::Frames(cmd) => text(
             request::parse_selection(&cmd.at, cmd.every.as_deref(), cmd.keyframes).and_then(
                 |selection| {

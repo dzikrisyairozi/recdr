@@ -146,3 +146,22 @@ fn two_matching_windows_are_ambiguous() {
     );
     assert_eq!(error["candidates"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+#[ignore]
+fn detached_recorder_captures_the_desktop() {
+    let out = out_dir("detached");
+    let started = recdr()
+        .args(["start", "--monitor", "0", "--out"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let id = ok(&started)["id"].as_str().unwrap().to_owned();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let stopped = recdr()
+        .args(["stop", &id, "--out"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(ok(&stopped)["frames_stored"].as_u64().unwrap() >= 1);
+}
