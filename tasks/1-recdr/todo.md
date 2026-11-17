@@ -83,7 +83,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `Cargo.toml`, `Cargo.lock`, `src/lib.rs`, `src/error.rs`, `src/model.rs`, `src/time.rs`, `src/store.rs`
   - Scope: M
 
-- [ ] **Task 4: `recdr record --duration` with the synthetic source**
+- [x] **Task 4: `recdr record --duration` with the synthetic source**
   - Description: The blocking recording path, from command line to PNG frames, `manifest.json` and `result.json`, driven by the synthetic source.
   - Steps:
     - `src/capture/mod.rs`: `CaptureSource`, and `open`, which handles `ResolvedKind::Fake` and returns `CaptureFailed("no capture backend")` for the other kinds until Task 5.

@@ -1,9 +1,31 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
+mod fake;
 mod windows;
 
+use std::time::Duration;
+
 use crate::error::{Error, Result};
-use crate::model::{MonitorInfo, Rect, ResolvedKind, ResolvedTarget, Target, WindowInfo};
+use crate::model::{
+    CaptureEvent, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, Target, WindowInfo,
+};
+
+pub trait CaptureSource {
+    /// Ok(None) when nothing arrived within `timeout`.
+    fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>>;
+    /// Frames the source discarded because the consumer was behind.
+    fn dropped(&self) -> u64;
+}
+
+pub fn open(resolved: &ResolvedTarget, _fps: u32, _cursor: bool) -> Result<Box<dyn CaptureSource>> {
+    match resolved.kind {
+        ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
+            "the synthetic source is broken".into(),
+        )),
+        ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
+        _ => Err(Error::CaptureFailed("no capture backend".into())),
+    }
+}
 
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     windows::list_windows()
