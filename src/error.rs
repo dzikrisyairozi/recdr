@@ -1,0 +1,132 @@
+use serde_json::json;
+
+/// Every failure a user can see. The variant decides the JSON error code.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Usage(String),
+    #[error("no visible window or monitor matches {0}")]
+    TargetNotFound(String),
+    #[error("{} windows match {query:?}; pass --window-id", candidates.len())]
+    AmbiguousTarget {
+        query: String,
+        candidates: Vec<serde_json::Value>,
+    },
+    #[error("window {0:?} is minimized")]
+    TargetMinimized(String),
+    #[error("the region must lie inside one monitor")]
+    RegionOutOfBounds,
+    #[error("ffmpeg was not found on PATH; it is needed for mp4")]
+    FfmpegNotFound,
+    #[error("the recorder did not start: {0}")]
+    RecorderStartFailed(String),
+    #[error("no recording {0:?} under the output root")]
+    RecordingNotFound(String),
+    #[error("recording {0:?} is not running")]
+    RecordingNotActive(String),
+    #[error(
+        "the recorder for {0:?} exited without a result; its log is in the recording directory"
+    )]
+    RecorderCrashed(String),
+    #[error("{0} frames match; ask for at most 8")]
+    TooManyFrames(usize),
+    #[error("capture failed: {0}")]
+    CaptureFailed(String),
+    #[error("encoding failed: {0}")]
+    EncodeFailed(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+impl Error {
+    /// Stable identifier printed in the JSON error object. Agents match on this,
+    /// so renaming one is a breaking change.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Error::Usage(_) => "usage",
+            Error::TargetNotFound(_) => "target_not_found",
+            Error::AmbiguousTarget { .. } => "ambiguous_target",
+            Error::TargetMinimized(_) => "target_minimized",
+            Error::RegionOutOfBounds => "region_out_of_bounds",
+            Error::FfmpegNotFound => "ffmpeg_not_found",
+            Error::RecorderStartFailed(_) => "recorder_start_failed",
+            Error::RecordingNotFound(_) => "recording_not_found",
+            Error::RecordingNotActive(_) => "recording_not_active",
+            Error::RecorderCrashed(_) => "recorder_crashed",
+            Error::TooManyFrames(_) => "too_many_frames",
+            Error::CaptureFailed(_) => "capture_failed",
+            Error::EncodeFailed(_) => "encode_failed",
+            Error::Io(_) => "io_error",
+        }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Error::Usage(_) => 2,
+            _ => 1,
+        }
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut error = json!({ "code": self.code(), "message": self.to_string() });
+        if let Error::AmbiguousTarget { candidates, .. } = self {
+            error["candidates"] = json!(candidates);
+        }
+        json!({ "error": error })
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Io(std::io::Error::other(e))
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_variant_has_the_code_from_the_spec() {
+        let all = [
+            (Error::Usage(String::new()), "usage"),
+            (Error::TargetNotFound(String::new()), "target_not_found"),
+            (
+                Error::AmbiguousTarget {
+                    query: String::new(),
+                    candidates: Vec::new(),
+                },
+                "ambiguous_target",
+            ),
+            (Error::TargetMinimized(String::new()), "target_minimized"),
+            (Error::RegionOutOfBounds, "region_out_of_bounds"),
+            (Error::FfmpegNotFound, "ffmpeg_not_found"),
+            (
+                Error::RecorderStartFailed(String::new()),
+                "recorder_start_failed",
+            ),
+            (
+                Error::RecordingNotFound(String::new()),
+                "recording_not_found",
+            ),
+            (
+                Error::RecordingNotActive(String::new()),
+                "recording_not_active",
+            ),
+            (Error::RecorderCrashed(String::new()), "recorder_crashed"),
+            (Error::TooManyFrames(9), "too_many_frames"),
+            (Error::CaptureFailed(String::new()), "capture_failed"),
+            (Error::EncodeFailed(String::new()), "encode_failed"),
+            (Error::Io(std::io::Error::other("x")), "io_error"),
+        ];
+        assert_eq!(all.len(), 14);
+        for (error, code) in &all {
+            assert_eq!(error.code(), *code);
+            let expected_exit = if *code == "usage" { 2 } else { 1 };
+            assert_eq!(error.exit_code(), expected_exit, "{code}");
+            assert_eq!(error.to_json()["error"]["code"], *code);
+        }
+    }
+}

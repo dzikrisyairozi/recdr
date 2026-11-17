@@ -1,0 +1,115 @@
+//! Enforces the layer rules in tasks/1-recdr/plan.md. Comment lines are ignored;
+//! everything else is matched as plain substrings.
+
+use std::path::{Path, PathBuf};
+
+fn source_files() -> Vec<(String, String)> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut paths = Vec::new();
+    walk(&src, &mut paths);
+    paths
+        .into_iter()
+        .map(|path| {
+            let relative = path
+                .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let code = std::fs::read_to_string(&path)
+                .unwrap()
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (relative, code)
+        })
+        .collect()
+}
+
+fn forbid(needles: &[&str], allowed: &[&str]) {
+    for (path, code) in source_files() {
+        if allowed.contains(&path.as_str()) {
+            continue;
+        }
+        for needle in needles {
+            assert!(!code.contains(needle), "{path} contains {needle:?}");
+        }
+    }
+}
+
+#[test]
+fn rule_1_only_store_names_recording_files() {
+    forbid(
+        &[
+            "\"state.json\"",
+            "\"manifest.json\"",
+            "\"result.json\"",
+            "\"diff.json\"",
+            "\"marks.jsonl\"",
+            "\"recorder.log\"",
+            "\"contact_sheet.png\"",
+            "\"recording.gif\"",
+            "\"recording.mp4\"",
+        ],
+        &["src/store.rs"],
+    );
+}
+
+#[test]
+fn rule_2_each_front_end_library_stays_in_its_front_end() {
+    forbid(&["clap"], &["src/cli.rs"]);
+    forbid(&["rmcp", "tokio", "base64"], &["src/mcp.rs"]);
+}
+
+#[test]
+fn rule_3_unsafe_only_in_three_files() {
+    forbid(
+        &["unsafe"],
+        &["src/capture/windows.rs", "src/input.rs", "src/platform.rs"],
+    );
+}
+
+#[test]
+fn rule_4_front_ends_import_only_control_request_model_error() {
+    let below = [
+        "recorder::",
+        "capture::",
+        "input::",
+        "store::",
+        "analyze::",
+        "encode::",
+        "draw::",
+        "platform::",
+        "time::",
+        "crate::{",
+    ];
+    for (path, code) in source_files() {
+        let extra = match path.as_str() {
+            "src/cli.rs" => "mcp::",
+            "src/mcp.rs" => "cli::",
+            _ => continue,
+        };
+        for needle in below.iter().chain([&extra]) {
+            assert!(!code.contains(needle), "{path} contains {needle:?}");
+        }
+    }
+}
+
+#[test]
+fn rule_5_model_has_no_functions() {
+    for (path, code) in source_files() {
+        if path == "src/model.rs" {
+            assert!(!code.contains("fn "), "src/model.rs contains a function");
+        }
+    }
+}

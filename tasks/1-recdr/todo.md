@@ -18,7 +18,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
 
 ## Phase 1: a recording on disk
 
-- [ ] **Task 1: Package scaffold and the JSON error contract**
+- [x] **Task 1: Package scaffold and the JSON error contract**
   - Description: Create the Cargo package, the `Error` type, and a `recdr` binary that turns any bad command line into the JSON usage error.
   - Steps:
     - Stop and tell the owner if the directory `recdr/` exists at the repository root. It is a stray clone that the owner removes.

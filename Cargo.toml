@@ -1,0 +1,19 @@
+[package]
+name = "recdr"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Screen recorder that AI agents drive through a CLI and an MCP server"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "recdr"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
