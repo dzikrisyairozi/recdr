@@ -159,3 +159,35 @@ fn three_seconds_make_a_looping_gif_of_the_same_length() {
     }
     assert!((250..=350).contains(&hundredths), "{hundredths} hundredths");
 }
+
+#[test]
+fn moving_gets_keyframes_a_diff_and_a_contact_sheet() {
+    let (output, _) = record(
+        "moving",
+        "analyze-2s",
+        &["--monitor", "0", "--duration", "2s"],
+    );
+    let result = ok(&output);
+    let diff: Value =
+        serde_json::from_slice(&std::fs::read(result["diff"].as_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(
+        diff["frames"].as_array().unwrap().len() as u64,
+        result["frames_stored"].as_u64().unwrap()
+    );
+    let keyframes = result["keyframes"].as_array().unwrap();
+    assert!(keyframes.len() >= 2, "{keyframes:?}");
+    for keyframe in keyframes {
+        assert!(std::path::Path::new(keyframe["path"].as_str().unwrap()).is_file());
+    }
+    assert!(std::path::Path::new(result["contact_sheet"].as_str().unwrap()).is_file());
+}
+
+#[test]
+fn static_screen_has_one_keyframe() {
+    let (output, _) = record(
+        "static",
+        "static-keyframes",
+        &["--monitor", "0", "--duration", "1s"],
+    );
+    assert_eq!(ok(&output)["keyframes"].as_array().unwrap().len(), 1);
+}

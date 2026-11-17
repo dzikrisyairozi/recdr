@@ -151,7 +151,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `Cargo.toml`, `Cargo.lock`, `src/lib.rs`, `src/encode/mod.rs`, `src/encode/gif.rs`, `src/recorder.rs`, `tests/record.rs`
   - Scope: M
 
-- [ ] **Task 7: Keyframes, `diff.json` and the contact sheet**
+- [x] **Task 7: Keyframes, `diff.json` and the contact sheet**
   - Description: The agent view that is written when a recording finishes.
   - Steps:
     - Add `font8x8` to `Cargo.toml`.

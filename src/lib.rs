@@ -1,6 +1,8 @@
+pub mod analyze;
 pub mod capture;
 pub mod cli;
 pub mod control;
+pub mod draw;
 pub mod encode;
 pub mod error;
 pub mod model;

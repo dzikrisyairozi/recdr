@@ -2,11 +2,13 @@
 
 use std::time::{Duration, Instant};
 
+use crate::analyze;
 use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    CaptureEvent, Format, Manifest, Mark, RecordingResult, State, Status, StopReason,
+    CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, State, Status,
+    StopReason,
 };
 use crate::store::RecordingDir;
 use crate::time;
@@ -121,6 +123,10 @@ fn finalize(
     command_exit_code: Option<i32>,
 ) -> Result<RecordingResult> {
     let manifest_path = dir.write_manifest(&manifest)?;
+    let diffs = analyze::run(dir, &manifest)?;
+    let contact_sheet = analyze::sheet::contact_sheet(dir, &manifest, &diffs)?;
+    let keyframes = analyze::select::select(&manifest, &diffs, &FrameSelection::Keyframes);
+    let keyframes = analyze::select::frame_refs(dir, &keyframes, None)?;
     let gif = if state.options.formats.contains(&Format::Gif) {
         Some(encode::gif::encode(dir, &manifest)?)
     } else {
@@ -136,12 +142,12 @@ fn finalize(
         height: manifest.height,
         frames_stored: manifest.frames.len() as u32,
         dropped_frames: manifest.dropped_frames,
-        keyframes: Vec::new(),
+        keyframes,
         marks: manifest.marks.clone(),
         gif,
         mp4: None,
-        contact_sheet: None,
-        diff: None,
+        contact_sheet,
+        diff: dir.diff_path(),
         manifest: manifest_path,
     };
     dir.write_result(&result)?;

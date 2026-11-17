@@ -251,10 +251,8 @@ pub struct RecordingResult {
     pub gif: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub mp4: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub contact_sheet: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub diff: Option<PathBuf>,
+    pub contact_sheet: PathBuf,
+    pub diff: PathBuf,
     pub manifest: PathBuf,
 }
 

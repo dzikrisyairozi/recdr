@@ -217,6 +217,10 @@ impl RecordingDir {
         self.path.join(CONTACT_SHEET)
     }
 
+    pub fn diff_path(&self) -> PathBuf {
+        self.path.join(DIFF)
+    }
+
     pub fn gif_path(&self) -> PathBuf {
         self.path.join(GIF)
     }
