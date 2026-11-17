@@ -1,9 +1,13 @@
 //! The operations a user can ask for. Both front ends call these and nothing below.
 
+use std::path::Path;
+
+use crate::analyze;
 use crate::capture;
 use crate::error::{Error, Result};
 use crate::model::{
-    MonitorList, RecordOptions, RecordingResult, State, Status, Target, WindowList,
+    FrameList, FrameSelection, MonitorList, RecordOptions, RecordingResult, State, Status, Target,
+    WindowList,
 };
 use crate::recorder;
 use crate::store::RecordingDir;
@@ -30,6 +34,25 @@ pub fn record(options: RecordOptions) -> Result<RecordingResult> {
     }
     let dir = prepare(options)?;
     recorder::run(&dir)
+}
+
+/// Stored frames of a finished recording, picked by time, interval or keyframe.
+pub fn frames(
+    out: &Path,
+    id: &str,
+    selection: &FrameSelection,
+    max_width: Option<u32>,
+) -> Result<FrameList> {
+    let dir = RecordingDir::open(out, id)?;
+    if dir.read_result()?.is_none() {
+        return Err(Error::RecordingNotFound(id.to_owned()));
+    }
+    let manifest = dir.read_manifest()?;
+    let diffs = dir.read_diff()?;
+    let entries = analyze::select::select(&manifest, &diffs, selection);
+    Ok(FrameList {
+        frames: analyze::select::frame_refs(&dir, &entries, max_width)?,
+    })
 }
 
 /// Resolves the target and writes the initial state. Nothing is created on disk

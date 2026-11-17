@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
-use crate::model::{FakeKind, Format, RecordOptions, Rect, Target};
+use crate::model::{FakeKind, Format, FrameSelection, RecordOptions, Rect, Target};
 use crate::time::parse_time;
 
 pub const DEFAULT_FPS: u32 = 15;
@@ -175,6 +175,31 @@ pub fn resolve_out(out: Option<PathBuf>) -> Result<PathBuf> {
     Ok(std::path::absolute(out)?)
 }
 
+/// Exactly one of `--at`, `--every` and `--keyframes`.
+pub fn parse_selection(
+    at: &[String],
+    every: Option<&str>,
+    keyframes: bool,
+) -> Result<FrameSelection> {
+    let given = usize::from(!at.is_empty()) + usize::from(every.is_some()) + usize::from(keyframes);
+    if given != 1 {
+        return Err(usage("give exactly one of --at, --every, --keyframes"));
+    }
+    if let Some(every) = every {
+        let step = parse_time(every)?;
+        if step == 0 {
+            return Err(usage("--every must be more than 0"));
+        }
+        return Ok(FrameSelection::Every(step));
+    }
+    if keyframes {
+        return Ok(FrameSelection::Keyframes);
+    }
+    Ok(FrameSelection::At(
+        at.iter().map(|t| parse_time(t)).collect::<Result<_>>()?,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +238,30 @@ mod tests {
         );
         assert_eq!(parse_formats("gif,gif").unwrap(), [Format::Gif]);
         assert_eq!(parse_formats("webm").unwrap_err().code(), "usage");
+    }
+
+    #[test]
+    fn parse_selection_takes_exactly_one_kind() {
+        let at = ["500ms".to_owned(), "1s".to_owned()];
+        assert!(matches!(
+            parse_selection(&at, None, false).unwrap(),
+            FrameSelection::At(times) if times == [500, 1000]
+        ));
+        assert!(matches!(
+            parse_selection(&[], Some("250ms"), false).unwrap(),
+            FrameSelection::Every(250)
+        ));
+        assert!(matches!(
+            parse_selection(&[], None, true).unwrap(),
+            FrameSelection::Keyframes
+        ));
+        for (at, every, keyframes) in [
+            (&[][..], None, false),
+            (&at[..], None, true),
+            (&[][..], Some("0ms"), false),
+        ] {
+            let code = parse_selection(at, every, keyframes).unwrap_err().code();
+            assert_eq!(code, "usage");
+        }
     }
 }

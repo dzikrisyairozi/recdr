@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::control;
 use crate::error::{Error, Result};
-use crate::request::RecordRequest;
+use crate::request::{self, RecordRequest};
 
 #[derive(Parser)]
 #[command(name = "recdr", version, about = "Screen recorder for AI agents")]
@@ -25,6 +25,8 @@ enum Command {
     Monitors,
     /// Record for a fixed time, then print the result
     Record(RecordCmd),
+    /// Print paths of stored frames of a finished recording
+    Frames(FramesCmd),
     /// Run the MCP server on stdio
     Mcp,
 }
@@ -85,6 +87,27 @@ struct RecordCmd {
     duration: Option<String>,
 }
 
+#[derive(Args)]
+struct FramesCmd {
+    /// Recording id
+    id: String,
+    /// Times such as 500ms,1s; each gives the frame on screen then
+    #[arg(long, value_delimiter = ',')]
+    at: Vec<String>,
+    /// One frame per interval, e.g. 500ms
+    #[arg(long)]
+    every: Option<String>,
+    /// The frames where the screen changed
+    #[arg(long)]
+    keyframes: bool,
+    /// Scale wider frames down to this width into samples/
+    #[arg(long)]
+    max_width: Option<u32>,
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
 impl RecordFlags {
     fn into_request(self) -> RecordRequest {
         RecordRequest {
@@ -127,6 +150,14 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
             };
             text(request.into_options().and_then(control::record))
         }
+        Command::Frames(cmd) => text(
+            request::parse_selection(&cmd.at, cmd.every.as_deref(), cmd.keyframes).and_then(
+                |selection| {
+                    let out = request::resolve_out(cmd.out)?;
+                    control::frames(&out, &cmd.id, &selection, cmd.max_width)
+                },
+            ),
+        ),
         Command::Mcp => serve_mcp().map(|()| None),
     };
     match outcome {

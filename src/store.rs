@@ -200,7 +200,12 @@ impl RecordingDir {
     }
 
     pub fn frame_path(&self, entry: &FrameEntry) -> PathBuf {
-        self.path.join(&entry.file)
+        // `file` uses `/` so the manifest reads the same everywhere; join part by part
+        // so the printed path uses the platform separator throughout.
+        entry
+            .file
+            .split('/')
+            .fold(self.path.clone(), |path, part| path.join(part))
     }
 
     pub fn load_frame(&self, entry: &FrameEntry) -> Result<RgbaImage> {

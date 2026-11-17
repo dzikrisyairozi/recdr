@@ -174,7 +174,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `Cargo.toml`, `Cargo.lock`, `src/lib.rs`, `src/draw.rs`, `src/analyze/mod.rs`, `src/analyze/diff.rs`, `src/analyze/sheet.rs`, `src/analyze/select.rs`, `src/model.rs`, `src/recorder.rs`, `tests/record.rs`
   - Scope: L by file count; the four `analyze` files and `draw.rs` are small and are one concern each
 
-- [ ] **Task 8: `recdr frames`**
+- [x] **Task 8: `recdr frames`**
   - Description: Return stored frames by time, by interval, or the keyframes.
   - Steps:
     - `src/request.rs`: `parse_selection` (Task 4 leaves it out because `FrameSelection` has no user until now).
@@ -196,9 +196,9 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
 
 ### Checkpoint B
 
-- [ ] `cargo test` passes.
-- [ ] On the desktop, `cargo run -- record --monitor 0 --duration 3s` gives a playable GIF and a contact sheet (success criteria 2, 8, 9, 11).
-- [ ] Review with the owner before Phase 3.
+- [x] `cargo test` passes.
+- [x] On the desktop, `cargo run -- record --monitor 0 --duration 3s` gives a playable GIF and a contact sheet (success criteria 2, 8, 9, 11).
+- [x] Review with the owner before Phase 3.
 
 ## Phase 3: control
 
