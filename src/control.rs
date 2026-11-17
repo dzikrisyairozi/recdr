@@ -7,10 +7,11 @@ use std::time::{Duration, Instant};
 
 use crate::analyze;
 use crate::capture;
+use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions, RecordingResult, StartInfo,
-    State, Status, StatusEntry, StatusList, Target, WindowList,
+    Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions, RecordingResult,
+    StartInfo, State, Status, StatusEntry, StatusList, Target, WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -188,6 +189,9 @@ pub fn frames(
 /// Resolves the target and writes the initial state. Nothing is created on disk
 /// when the target cannot be resolved.
 fn prepare(options: RecordOptions) -> Result<RecordingDir> {
+    if options.formats.contains(&Format::Mp4) && !encode::ffmpeg::available() {
+        return Err(Error::FfmpegNotFound);
+    }
     let (windows, monitors) = match &options.target {
         Target::WindowId(_) | Target::WindowTitle(_) | Target::Process(_) => {
             (capture::list_windows()?, Vec::new())

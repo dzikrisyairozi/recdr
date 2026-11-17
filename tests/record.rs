@@ -276,3 +276,67 @@ fn duration_and_command_together_is_usage() {
     );
     assert_eq!(error_code(&output), (Some(2), "usage".into()));
 }
+
+fn tool_runs(name: &str) -> bool {
+    std::process::Command::new(name)
+        .arg("-version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+#[test]
+fn mp4_is_h264_of_the_recording_length() {
+    if !tool_runs("ffmpeg") || !tool_runs("ffprobe") {
+        println!("skipped: ffmpeg or ffprobe not on PATH");
+        return;
+    }
+    let (output, _) = record(
+        "moving",
+        "mp4",
+        &["--monitor", "0", "--duration", "2s", "--format", "gif,mp4"],
+    );
+    let result = ok(&output);
+    assert!(std::path::Path::new(result["gif"].as_str().unwrap()).is_file());
+    let mp4 = result["mp4"].as_str().unwrap();
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_name:format=duration",
+            "-of",
+            "json",
+            mp4,
+        ])
+        .output()
+        .unwrap();
+    let probe = json(&probe.stdout);
+    assert_eq!(probe["streams"][0]["codec_name"], "h264");
+    let seconds: f64 = probe["format"]["duration"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let expected = result["duration_ms"].as_f64().unwrap() / 1000.0;
+    assert!((seconds - expected).abs() <= 0.5, "{seconds} vs {expected}");
+}
+
+#[test]
+fn mp4_without_ffmpeg_is_refused_before_anything_is_written() {
+    let out = out_dir("no-ffmpeg");
+    let empty = out_dir("no-ffmpeg-path");
+    let output = recdr()
+        .env("RECDR_FAKE_SOURCE", "moving")
+        .env("PATH", &empty)
+        .args(["record", "--out"])
+        .arg(&out)
+        .args(["--monitor", "0", "--duration", "1s", "--format", "mp4"])
+        .output()
+        .unwrap();
+    assert_eq!(error_code(&output), (Some(1), "ffmpeg_not_found".into()));
+    let made = std::fs::read_dir(&out)
+        .unwrap()
+        .filter(|e| e.as_ref().unwrap().path().is_dir())
+        .count();
+    assert_eq!(made, 0);
+}

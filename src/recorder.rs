@@ -177,6 +177,11 @@ fn finalize(
     } else {
         None
     };
+    let mp4 = if state.options.formats.contains(&Format::Mp4) {
+        Some(encode::ffmpeg::encode(dir, &manifest)?)
+    } else {
+        None
+    };
     let result = RecordingResult {
         id: manifest.id.clone(),
         dir: dir.path().to_path_buf(),
@@ -190,7 +195,7 @@ fn finalize(
         keyframes,
         marks: manifest.marks.clone(),
         gif,
-        mp4: None,
+        mp4,
         contact_sheet,
         diff: dir.diff_path(),
         manifest: manifest_path,

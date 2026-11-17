@@ -1,5 +1,6 @@
 //! Turns stored frames into output files.
 
+pub mod ffmpeg;
 pub mod gif;
 
 use image::RgbaImage;

@@ -293,7 +293,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `src/lib.rs`, `src/input.rs`, `src/draw.rs`, `src/recorder.rs`, `src/encode/mod.rs`, `src/encode/gif.rs`, `src/analyze/sheet.rs`
   - Scope: M
 
-- [ ] **Task 14: MP4 through ffmpeg**
+- [x] **Task 14: MP4 through ffmpeg**
   - Description: `--format mp4`.
   - Steps:
     - `src/encode/mod.rs`: `pub mod ffmpeg;`.
