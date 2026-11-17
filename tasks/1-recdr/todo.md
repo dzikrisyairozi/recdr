@@ -41,7 +41,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `.gitignore`, `Cargo.toml`, `Cargo.lock`, `src/main.rs`, `src/lib.rs`, `src/error.rs`, `src/cli.rs`, `tests/common/mod.rs`, `tests/cli.rs`, `tests/layers.rs`
   - Scope: M (three of the files are configuration and two are under ten lines)
 
-- [ ] **Task 2: `recdr windows` and `recdr monitors`**
+- [x] **Task 2: `recdr windows` and `recdr monitors`**
   - Description: List real windows and monitors as JSON, and resolve a target against such a list.
   - Steps:
     - Add `windows-capture` and `windows` to `Cargo.toml`.

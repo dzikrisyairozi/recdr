@@ -1,6 +1,8 @@
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
+use serde::Serialize;
 
+use crate::control;
 use crate::error::{Error, Result};
 
 #[derive(Parser)]
@@ -12,6 +14,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List visible top-level windows
+    Windows,
+    /// List monitors
+    Monitors,
     /// Run the MCP server on stdio
     Mcp,
 }
@@ -28,6 +34,8 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
     };
     // Some(json) is printed on stdout; None prints nothing.
     let outcome: Result<Option<String>> = match cli.command {
+        Command::Windows => text(control::list_windows()),
+        Command::Monitors => text(control::list_monitors()),
         Command::Mcp => serve_mcp().map(|()| None),
     };
     match outcome {
@@ -38,6 +46,10 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
         Ok(None) => 0,
         Err(e) => fail(&e),
     }
+}
+
+fn text<T: Serialize>(value: Result<T>) -> Result<Option<String>> {
+    Ok(Some(serde_json::to_string(&value?)?))
 }
 
 fn fail(error: &Error) -> i32 {

@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use crate::model::WindowInfo;
+
 /// Every failure a user can see. The variant decides the JSON error code.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -10,7 +12,7 @@ pub enum Error {
     #[error("{} windows match {query:?}; pass --window-id", candidates.len())]
     AmbiguousTarget {
         query: String,
-        candidates: Vec<serde_json::Value>,
+        candidates: Vec<WindowInfo>,
     },
     #[error("window {0:?} is minimized")]
     TargetMinimized(String),
@@ -87,6 +89,30 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ambiguous_target_lists_candidates_inside_error() {
+        let window = |id| WindowInfo {
+            id,
+            title: "t".into(),
+            process: String::new(),
+            pid: 0,
+            bounds: crate::model::Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            minimized: false,
+        };
+        let error = Error::AmbiguousTarget {
+            query: "t".into(),
+            candidates: vec![window(1), window(2)],
+        };
+        let json = error.to_json();
+        assert_eq!(json["error"]["code"], "ambiguous_target");
+        assert_eq!(json["error"]["candidates"].as_array().unwrap().len(), 2);
+    }
 
     #[test]
     fn every_variant_has_the_code_from_the_spec() {

@@ -1,4 +1,5 @@
 fn main() {
+    recdr::platform::set_dpi_aware();
     std::process::exit(recdr::cli::run(no_mcp))
 }
 
