@@ -68,17 +68,20 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     let mut raw_clicks = Vec::new();
 
     let interval_ms = u64::from(1000 / options.fps);
-    let mut last_accepted_ms = 0;
+    // At most one frame per 1/fps slot of the timeline. Counting slots, not the time since
+    // the last stored frame, keeps the rate when frames arrive late: a late frame does not
+    // push every later slot back.
+    let mut last_slot = 0;
     let (stop_reason, duration_ms) = loop {
         let event = source.next_event(POLL)?;
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
             Some(CaptureEvent::Frame(frame))
-                if source.paced() || elapsed_ms - last_accepted_ms >= interval_ms =>
+                if source.paced() || elapsed_ms / interval_ms > last_slot =>
             {
                 writer.push(frame, elapsed_ms)?;
-                last_accepted_ms = elapsed_ms;
+                last_slot = elapsed_ms / interval_ms;
             }
             Some(CaptureEvent::Frame(_)) | None => {}
             Some(CaptureEvent::Click {
