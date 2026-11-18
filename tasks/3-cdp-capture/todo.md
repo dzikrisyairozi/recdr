@@ -85,8 +85,8 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ### Checkpoint A: the first module still works
 
-- [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass
-- [ ] `cargo test --test desktop -- --ignored` passes
+- [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass
+- [x] `cargo test --test desktop -- --ignored` passes
 - [ ] By hand, by the owner: click once during `recdr record --monitor 0 --duration 5s`; `manifest.json` has one click and the GIF shows a ring (criterion 19)
 
 ## Phase 2: Linux and macOS
@@ -138,9 +138,9 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ### Checkpoint B: three systems (needs a push)
 
-- [ ] Stop and ask the owner to push `feat/3-cdp-capture` and open a draft pull request
-- [ ] The `test` job is green on `windows-latest`, `ubuntu-latest` and `macos-latest`
-- [ ] A failure is fixed in the task that owns the failing file, as a new commit, before Phase 3
+- [x] Stop and ask the owner to push `feat/3-cdp-capture` and open a draft pull request
+- [x] The `test` job is green on `windows-latest`, `ubuntu-latest` and `macos-latest`
+- [x] A failure is fixed in the task that owns the failing file, as a new commit, before Phase 3
 
 ## Phase 3: tabs
 
@@ -182,8 +182,8 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ### Checkpoint C: recdr talks to Chrome
 
-- [ ] `cargo test --test browser -- --ignored` passes on Windows
-- [ ] By hand: start Chrome with `--remote-debugging-port=9222 --user-data-dir=<an empty directory>`, run `recdr tabs --cdp 9222`, and see its tabs
+- [x] `cargo test --test browser -- --ignored` passes on Windows
+- [ ] By hand: start Chrome with `--remote-debugging-port=9222 --user-data-dir=<an empty directory>`, run `recdr tabs --cdp 9222`, and see its tabs (covered by `tabs_through_each_endpoint_form`, which runs the same command against a test Chrome; left for the owner)
 
 ## Phase 4: tab recording
 
@@ -252,8 +252,8 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ### Checkpoint D: a tab records
 
-- [ ] `cargo test`, `cargo test --test browser -- --ignored` and `cargo test --test desktop -- --ignored` pass on Windows
-- [ ] By hand: open the GIF from a 3 second recording of `ANIMATION` and see the box move
+- [x] `cargo test`, `cargo test --test browser -- --ignored` and `cargo test --test desktop -- --ignored` pass on Windows
+- [ ] By hand: open the GIF from a 3 second recording of `ANIMATION` and see the box move (stored frames checked: the box moves from x 12 to x 364; GIF playback left for the owner)
 
 ## Phase 5: the rest
 

@@ -383,12 +383,12 @@ Items arrive in the task that first uses them, so every commit passes clippy wit
 
 Steps 2 to 5 use `call` with a deadline of `CALL_TIMEOUT` each and the tab's session id.
 
-State of a `CdpSource`: the connection, the session id, `interval` (`1000 / fps` ms), `held: VecDeque<Frame>`, `unacked: VecDeque<i64>`, `release_at: Instant`, `frame_size: Option<(u32, u32)>` (size of the latest frame received), `clicks: VecDeque<CaptureEvent>`, and `click_script: Option<String>`.
+State of a `CdpSource`: the connection, the session id, `interval` (`1000 / fps` ms), `held: VecDeque<Frame>`, `unacked: Vec<i64>`, `release_at: Instant`, `frame_size: Option<(u32, u32)>` (size of the latest frame received), `clicks: VecDeque<CaptureEvent>`, and `click_script: Option<String>`.
 
 `next_event(timeout)` loops until it has something to return:
 
 1. A queued click is returned first.
-2. When `held` is not empty and `release_at` has passed: pop the front frame; when `held` is now empty and `unacked` has an id, pop the oldest and `send` `Page.screencastFrameAck {sessionId: id}`; set `release_at` to now plus `interval`; return the frame.
+2. When `held` is not empty and `release_at` has passed: pop the front frame; when `held` is now empty, `send` `Page.screencastFrameAck {sessionId: id}` for every id in `unacked` and clear it; set `release_at` to now plus `interval`; return the frame. (Task 13 found that acking only the oldest leaks one ack per burst of two frames, and the browser stops at two unacked.)
 3. Take the next message from `backlog`, or `poll`. `Closed` returns `CaptureEvent::Closed`. `Idle` returns `Ok(None)` when `timeout` has passed and sleeps `IDLE_SLEEP` otherwise.
 4. A message is handled by its `method`. A message whose `session_id` is not the tab's session is ignored, except `Target.detachedFromTarget`, which the browser sends outside the session and which names the session in its `params`.
 
@@ -396,6 +396,7 @@ State of a `CdpSource`: the connection, the session id, `interval` (`1000 / fps`
 |---|---|
 | `Page.screencastFrame` | `decode(params.data)`, set `frame_size`, push the frame to `held` and `params.sessionId` to `unacked` |
 | `Page.frameNavigated` with no `params.frame.parentId`, when `click_script` is set | `send` `Runtime.addBinding {name: BINDING}` |
+| `Page.loadEventFired` | clear `unacked`; `send` `Page.stopScreencast`, then `Page.startScreencast {format: "png"}` (added in Task 13) |
 | `Runtime.bindingCalled` with `params.name == BINDING`, when `frame_size` is known | `click(params.payload, frame_size)`; on `Some`, queue `CaptureEvent::Click` with `unix_ms` from `time::now_unix_ms()` |
 | `Target.detachedFromTarget` with `params.sessionId` equal to the tab's session | set `closed`; return `CaptureEvent::Closed` |
 | anything else | ignored |

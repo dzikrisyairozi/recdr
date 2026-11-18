@@ -198,11 +198,12 @@ This is the whole list. Adding to either table is a change to this spec.
 |---|---|
 | `Page.screencastFrame` | A frame |
 | `Page.frameNavigated` for the main frame | Add the click binding again |
+| `Page.loadEventFired` | Restart the screencast. Acks sent while a navigation is pending can be held or lost, and the browser sends no frames while two are unacked, so a page that paints once after a navigation would never arrive |
 | `Runtime.bindingCalled` | A click report |
 | `Target.detachedFromTarget` for the recorded tab | The tab is gone: stop with `tab_closed` |
 | The WebSocket closing | The browser is gone: stop with `tab_closed` |
 
-`Runtime.enable` is not sent, so the browser does not send recdr the page's console output or exceptions. `Page.enable` makes the browser send page lifecycle events, which carry URLs; recdr ignores all of them except `Page.frameNavigated`, and from that it uses only whether the frame is the main frame. recdr reads no DOM content, cookies, storage or network traffic, and sends no input to the page.
+`Runtime.enable` is not sent, so the browser does not send recdr the page's console output or exceptions. `Page.enable` makes the browser send page lifecycle events, which carry URLs; recdr ignores all of them except `Page.frameNavigated`, from which it uses only whether the frame is the main frame, and `Page.loadEventFired`, from which it uses only that it arrived. recdr reads no DOM content, cookies, storage or network traffic, and sends no input to the page.
 
 ### The `chrome` endpoint
 
