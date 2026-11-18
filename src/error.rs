@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::model::{ErrorInfo, WindowInfo};
+use crate::model::ErrorInfo;
 
 /// Every failure a user can see. The variant decides the JSON error code.
 #[derive(Debug, thiserror::Error)]
@@ -10,12 +10,14 @@ pub enum Error {
     Relayed(ErrorInfo),
     #[error("{0}")]
     Usage(String),
-    #[error("no visible window or monitor matches {0}")]
+    #[error("no target matches {0}")]
     TargetNotFound(String),
-    #[error("{} windows match {query:?}; pass --window-id", candidates.len())]
+    /// `kind` is "window" or "tab"; `candidates` are the matching items as printed.
+    #[error("{} {kind}s match {query:?}; pass --{kind}-id", candidates.len())]
     AmbiguousTarget {
         query: String,
-        candidates: Vec<WindowInfo>,
+        kind: &'static str,
+        candidates: Vec<serde_json::Value>,
     },
     #[error("window {0:?} is minimized")]
     TargetMinimized(String),
@@ -89,9 +91,7 @@ impl Error {
                 code: self.code().to_owned(),
                 message: self.to_string(),
                 candidates: match self {
-                    Error::AmbiguousTarget { candidates, .. } => {
-                        Some(candidates.iter().map(|c| json!(c)).collect())
-                    }
+                    Error::AmbiguousTarget { candidates, .. } => Some(candidates.clone()),
                     _ => None,
                 },
             },
@@ -123,23 +123,28 @@ mod tests {
 
     #[test]
     fn ambiguous_target_lists_candidates_inside_error() {
-        let window = |id| WindowInfo {
-            id,
-            title: "t".into(),
-            process: String::new(),
-            pid: 0,
-            bounds: crate::model::Rect {
-                x: 0,
-                y: 0,
-                width: 1,
-                height: 1,
-            },
-            minimized: false,
+        use crate::model::{Rect, WindowInfo};
+        let window = |id| {
+            json!(WindowInfo {
+                id,
+                title: "t".into(),
+                process: String::new(),
+                pid: 0,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                minimized: false,
+            })
         };
         let error = Error::AmbiguousTarget {
             query: "t".into(),
+            kind: "window",
             candidates: vec![window(1), window(2)],
         };
+        assert_eq!(error.to_string(), "2 windows match \"t\"; pass --window-id");
         let json = error.to_json();
         assert_eq!(json["error"]["code"], "ambiguous_target");
         assert_eq!(json["error"]["candidates"].as_array().unwrap().len(), 2);
@@ -174,6 +179,7 @@ mod tests {
             (
                 Error::AmbiguousTarget {
                     query: String::new(),
+                    kind: "window",
                     candidates: Vec::new(),
                 },
                 "ambiguous_target",

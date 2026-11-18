@@ -187,7 +187,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 4: tab recording
 
-- [ ] **Task 10: one matcher for windows and tabs**
+- [x] **Task 10: one matcher for windows and tabs**
   - Description: `single` becomes generic and `ambiguous_target` can list tabs. Tabs start using it in Task 11.
   - Steps:
     - `src/error.rs`: `AmbiguousTarget` and `TargetNotFound` as in Contracts; `info()` passes the candidates through. The two tests that build an `AmbiguousTarget` change as Contracts says.

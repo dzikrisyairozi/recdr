@@ -9,6 +9,8 @@ mod windows;
 
 use std::time::Duration;
 
+use serde::Serialize;
+
 use crate::error::{Error, Result};
 use crate::model::{
     CaptureEvent, Endpoint, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, TabInfo,
@@ -106,14 +108,14 @@ pub fn resolve(
             let found = windows
                 .iter()
                 .filter(|w| w.title.to_lowercase().contains(&needle));
-            single(found, text, format!("window {text:?}"))
+            window_target(single(found, text, "window", format!("window {text:?}"))?)
         }
         Target::Process(name) => {
             let needle = name.to_lowercase();
             let found = windows
                 .iter()
                 .filter(|w| w.process.to_lowercase() == needle);
-            single(found, name, format!("process {name:?}"))
+            window_target(single(found, name, "window", format!("process {name:?}"))?)
         }
         Target::Region(region) => {
             let monitor = monitors
@@ -152,21 +154,27 @@ pub fn resolve(
     }
 }
 
-fn single<'a>(
-    mut found: impl Iterator<Item = &'a WindowInfo>,
+/// The one item of `found`, or `target_not_found` for none and `ambiguous_target` for several.
+fn single<'a, T: Serialize>(
+    mut found: impl Iterator<Item = &'a T>,
     query: &str,
+    kind: &'static str,
     described: String,
-) -> Result<ResolvedTarget> {
+) -> Result<&'a T> {
     let first = found.next().ok_or(Error::TargetNotFound(described))?;
-    let rest: Vec<&WindowInfo> = found.collect();
+    let rest: Vec<&T> = found.collect();
     if !rest.is_empty() {
-        let candidates = std::iter::once(first).chain(rest).cloned().collect();
+        let candidates = std::iter::once(first)
+            .chain(rest)
+            .map(|item| serde_json::json!(item))
+            .collect();
         return Err(Error::AmbiguousTarget {
             query: query.to_owned(),
+            kind,
             candidates,
         });
     }
-    window_target(first)
+    Ok(first)
 }
 
 fn window_target(window: &WindowInfo) -> Result<ResolvedTarget> {
@@ -257,12 +265,56 @@ mod tests {
     #[test]
     fn title_matching_two_windows_is_ambiguous_and_lists_both() {
         match resolve_with(Target::WindowTitle("chrome".into())) {
-            Err(Error::AmbiguousTarget { candidates, .. }) => {
-                let ids: Vec<u64> = candidates.iter().map(|w| w.id).collect();
-                assert_eq!(ids, [1, 2]);
+            Err(error @ Error::AmbiguousTarget { .. }) => {
+                assert_eq!(
+                    error.to_string(),
+                    "2 windows match \"chrome\"; pass --window-id"
+                );
+                let Error::AmbiguousTarget { candidates, .. } = error else {
+                    unreachable!()
+                };
+                let ids: Vec<Option<u64>> = candidates.iter().map(|c| c["id"].as_u64()).collect();
+                assert_eq!(ids, [Some(1), Some(2)]);
             }
             other => panic!("expected AmbiguousTarget, got {other:?}"),
         }
+    }
+
+    fn tab(id: &str, title: &str) -> TabInfo {
+        TabInfo {
+            id: id.into(),
+            title: title.into(),
+            url: format!("http://example.test/{id}"),
+        }
+    }
+
+    #[test]
+    fn single_serves_tabs_too() {
+        let tabs = [tab("A1", "Docs"), tab("B2", "Docs too")];
+        let pick = |query: &str| {
+            let needle = query.to_lowercase();
+            let found = tabs
+                .iter()
+                .filter(|t| t.title.to_lowercase().contains(&needle));
+            single(found, query, "tab", format!("tab {query:?}"))
+        };
+
+        let error = pick("docs").unwrap_err();
+        assert_eq!(error.code(), "ambiguous_target");
+        assert_eq!(error.to_string(), "2 tabs match \"docs\"; pass --tab-id");
+        let candidates = error.info().candidates.unwrap();
+        assert_eq!(candidates.len(), 2);
+        for candidate in &candidates {
+            let mut keys: Vec<&String> = candidate.as_object().unwrap().keys().collect();
+            keys.sort();
+            assert_eq!(keys, ["id", "title", "url"]);
+        }
+
+        assert_eq!(pick("too").unwrap().id, "B2");
+
+        let missing = pick("mail").unwrap_err();
+        assert_eq!(missing.code(), "target_not_found");
+        assert_eq!(missing.to_string(), "no target matches tab \"mail\"");
     }
 
     #[test]
