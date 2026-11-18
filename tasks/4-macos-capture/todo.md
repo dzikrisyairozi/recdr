@@ -59,7 +59,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/mod.rs`
   - Scope: S
 
-- [ ] **Task 3: the browser test helpers move to `tests/common`**
+- [x] **Task 3: the browser test helpers move to `tests/common`**
   - Description: A move with no change in behavior, so the desktop tests can start a Chrome window and talk to it.
   - Steps:
     - `tests/common/mod.rs`: `Browser`, `Client`, `serve` and the three page constants, each `pub`.

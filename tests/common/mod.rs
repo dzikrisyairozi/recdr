@@ -1,12 +1,15 @@
 #![allow(dead_code)]
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tungstenite::{Message, WebSocket};
 
 /// The built binary, with the synthetic-source switch removed so each test opts in.
 pub fn recdr() -> Command {
@@ -155,4 +158,242 @@ pub fn text(result: &Value) -> String {
 
 pub fn is_error(result: &Value) -> bool {
     result["isError"] == true
+}
+/// White page with a red 200x200 box at top 400 px whose left edge moves 4 px per
+/// animation frame.
+pub const ANIMATION: &str = "<!doctype html><title>moving box</title>\
+<style>body{margin:0;background:#fff}#b{position:absolute;top:400px;left:0;\
+width:200px;height:200px;background:#f00}</style><div id=b></div>\
+<script>let x=0;const b=document.getElementById('b');\
+function f(){x=(x+4)%1000;b.style.left=x+'px';requestAnimationFrame(f)}\
+requestAnimationFrame(f)</script>";
+pub const STILL: &str = "<!doctype html><title>quiet page</title>\
+<style>body{margin:0;background:#fff}</style><h1>A page that does not change</h1>";
+pub const GREEN: &str = "<!doctype html><title>green</title>\
+<style>html,body{margin:0;height:100%;background:#00aa00}</style>";
+
+/// Serves the three test pages on 127.0.0.1, by path, and returns the port.
+pub fn serve() -> u16 {
+    static PORT: OnceLock<u16> = OnceLock::new();
+    *PORT.get_or_init(|| {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || answer(stream));
+            }
+        });
+        port
+    })
+}
+
+fn answer(mut stream: TcpStream) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut request = String::new();
+    if reader.read_line(&mut request).is_err() {
+        return;
+    }
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+            break;
+        }
+    }
+    let path = request.split_whitespace().nth(1).unwrap_or_default();
+    let (status, body) = match path {
+        "/anim" => ("200 OK", ANIMATION),
+        "/still" => ("200 OK", STILL),
+        "/green" => ("200 OK", GREEN),
+        _ => ("404 Not Found", ""),
+    };
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
+
+fn chrome_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("RECDR_TEST_CHROME") {
+        return path.into();
+    }
+    PathBuf::from(if cfg!(windows) {
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    } else if cfg!(target_os = "macos") {
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    } else {
+        "/usr/bin/google-chrome"
+    })
+}
+
+/// A headless Chrome with its own user data directory, ended when dropped.
+pub struct Browser {
+    pub child: Child,
+    pub dir: PathBuf,
+    pub port: u16,
+}
+
+impl Browser {
+    /// Headless Chrome with a fresh user data directory and these extra arguments.
+    pub fn start(name: &str, extra: &[&str]) -> Browser {
+        let dir = std::env::temp_dir().join(format!("recdr-browser-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut command = Command::new(chrome_path());
+        command
+            .arg("--headless=new")
+            .arg("--remote-debugging-port=0")
+            .arg(format!("--user-data-dir={}", dir.display()))
+            .args([
+                "--window-size=1280,720",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ])
+            .args(extra)
+            .arg("about:blank")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if std::env::var_os("CI").is_some() {
+            command.arg("--no-sandbox");
+        }
+        let child = command
+            .spawn()
+            .unwrap_or_else(|e| panic!("start {}: {e}", chrome_path().display()));
+        let mut browser = Browser {
+            child,
+            dir,
+            port: 0,
+        };
+        let deadline = Instant::now() + Duration::from_secs(20);
+        browser.port = loop {
+            let text = std::fs::read_to_string(browser.port_file()).unwrap_or_default();
+            if let [port, _path] = text.lines().collect::<Vec<_>>()[..] {
+                break port.parse().unwrap();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Chrome wrote no DevToolsActivePort"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        browser
+    }
+
+    pub fn port_file(&self) -> PathBuf {
+        self.dir.join("DevToolsActivePort")
+    }
+
+    /// The browser's own ws:// URL, built from `DevToolsActivePort`.
+    pub fn ws_url(&self) -> String {
+        let text = std::fs::read_to_string(self.port_file()).unwrap();
+        let path = text.lines().nth(1).unwrap();
+        format!("ws://127.0.0.1:{}{path}", self.port)
+    }
+
+    pub fn client(&self) -> Client {
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            // A CI runner's Chrome has taken over 10 s to answer while recording.
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        let (ws, _) = tungstenite::client(self.ws_url().as_str(), stream).unwrap();
+        Client { ws, next_id: 1 }
+    }
+}
+
+impl Drop for Browser {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// The test's own CDP connection, separate from recdr's.
+pub struct Client {
+    pub ws: WebSocket<TcpStream>,
+    next_id: u64,
+}
+
+impl Client {
+    /// Sends a command and returns its result, skipping events. Panics on an error reply.
+    pub fn call(&mut self, method: &str, params: Value, session: Option<&str>) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut command = json!({ "id": id, "method": method, "params": params });
+        if let Some(session) = session {
+            command["sessionId"] = json!(session);
+        }
+        self.ws.send(Message::text(command.to_string())).unwrap();
+        loop {
+            let Message::Text(text) = self.ws.read().unwrap() else {
+                continue;
+            };
+            let reply: Value = serde_json::from_str(text.as_str()).unwrap();
+            if reply["id"] == id {
+                assert!(reply["error"].is_null(), "{method}: {reply}");
+                return reply["result"].clone();
+            }
+        }
+    }
+
+    /// Attaches to a tab and returns the session id for later calls.
+    pub fn attach(&mut self, tab: &str) -> String {
+        let result = self.call(
+            "Target.attachToTarget",
+            json!({ "targetId": tab, "flatten": true }),
+            None,
+        );
+        result["sessionId"].as_str().unwrap().to_owned()
+    }
+
+    /// The value of a JavaScript expression in the tab.
+    pub fn eval(&mut self, session: &str, expression: &str) -> Value {
+        let result = self.call(
+            "Runtime.evaluate",
+            json!({ "expression": expression, "returnByValue": true }),
+            Some(session),
+        );
+        result["result"]["value"].clone()
+    }
+
+    /// Opens `url` in the tab and waits until it has loaded.
+    pub fn navigate(&mut self, session: &str, url: &str) {
+        self.call("Page.navigate", json!({ "url": url }), Some(session));
+        let loaded = format!("document.readyState == 'complete' && location.href == '{url}'");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.eval(session, &loaded) != json!(true) {
+            assert!(Instant::now() < deadline, "{url} did not load");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// A left press and release at CSS position (x, y). Returns when the press was
+    /// sent, in Unix milliseconds.
+    pub fn press(&mut self, session: &str, x: u32, y: u32) -> u64 {
+        let sent = unix_ms();
+        for kind in ["mousePressed", "mouseReleased"] {
+            let event = json!({ "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1 });
+            self.call("Input.dispatchMouseEvent", event, Some(session));
+        }
+        sent
+    }
+
+    /// Ids of the page targets, in the browser's order.
+    pub fn tab_ids(&mut self) -> Vec<String> {
+        let result = self.call("Target.getTargets", json!({}), None);
+        result["targetInfos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|info| info["type"] == "page")
+            .map(|info| info["targetId"].as_str().unwrap().to_owned())
+            .collect()
+    }
+}
+
+fn unix_ms() -> u64 {
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    since.unwrap().as_millis() as u64
 }

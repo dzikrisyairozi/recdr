@@ -220,7 +220,7 @@ fn mask() -> u64
 
 ### `tests/common/mod.rs`
 
-Moved here from `tests/browser.rs`, unchanged except that each becomes `pub`: `Browser` with `start` and `client`, `Client` with its six functions, `serve`, and the constants `ANIMATION`, `STILL` and `GREEN`. Added in Task 6:
+Moved here from `tests/browser.rs`, unchanged except that each becomes `pub`: `Browser` with `start` and `client`, `Client` with its six functions, `serve`, and the constants `ANIMATION`, `STILL` and `GREEN`. Task 3 found that these need more than the list above: the private helpers `answer`, `chrome_path` and `unix_ms` moved with them, `Browser::port_file` and `Browser::ws_url` became `pub`, and so did the fields `Browser.child`, `Browser.dir`, `Browser.port` and `Client.ws`, which browser tests read. Added in Task 6:
 
 ```rust
 impl Browser {
