@@ -128,14 +128,14 @@ cargo test
   - Scope: XS
 
 ### Checkpoint B: Windows is done (needs a pull request)
-- [ ] The owner pushes the branch and opens a draft pull request. The build stops and asks.
+- [x] The owner pushes the branch and opens a draft pull request. The build stops and asks.
 - [ ] The `test` job is green on the three runners. On `ubuntu-latest` the log shows the MP4 tests ran and printed no `skipped` note (criterion 7).
-- [ ] Record in `acceptance.md` whether `windows-latest` has an H.264 encoder. If it has none, make the change under "If the Windows runner has no encoder" in the plan, as its own commit, and push again.
+- [x] Record in `acceptance.md` whether `windows-latest` has an H.264 encoder. If it has none, make the change under "If the Windows runner has no encoder" in the plan, as its own commit, and push again.
 - [ ] By hand: criterion 13 for Windows.
 
 ## Phase 3: macOS
 
-- [ ] **Task 7: try `AVAssetWriter`, and write the results into this plan**
+- [x] **Task 7: try `AVAssetWriter`, and write the results into this plan**
   - Description: A try-out program on the branch `spike/5-avf`, which is never merged (plan decision 11).
   - Steps:
     - On `spike/5-avf`: a cargo project in `spike/avf/` with the macOS dependencies of Contracts and `image`. Its `main` writes `out.mp4`, one second at 10 frames per second of a 320 by 240 picture with a red top-left quarter and a blue bottom-right quarter, with the calls listed for `avf.rs` in Contracts. It then reads the file with `tests/common/mp4.rs` (included with `#[path]`), runs `ffmpeg -y -i out.mp4 -frames:v 1 out.png`, loads the PNG, prints the codec, the size and the pixels at (40, 30) and (280, 210), and exits 1 when the codec is not H.264, the size is not 320 by 240, the first pixel is not red or the second not blue.

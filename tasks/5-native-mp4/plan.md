@@ -34,7 +34,20 @@ On 2026-11-18 on Windows 11 with `windows-capture` 2.0.1 (the spec lists the res
 - `send_frame_buffer(&mut self, buffer: &[u8], timestamp: i64) -> Result<(), VideoEncoderError>`. The first timestamp it gets becomes time zero.
 - `finish(self) -> Result<(), VideoEncoderError>`.
 
-Nothing was run on macOS. Task 7 does that first and writes what it finds into this plan.
+Nothing was run on macOS when the plan was written. Task 7 ran `spike/avf` (branch `spike/5-avf`, draft pull request #10, closed unmerged) on a hosted `macos-latest` runner on 2026-11-18, run 44350889597:
+
+```
+wrote /Users/runner/work/recdr/recdr/out.mp4 in 482.658708ms
+codec avc1, 320 by 240, 1000 ms
+pixel (40, 30) [233, 0, 2, 255], pixel (280, 210) [3, 0, 244, 255]
+h264 true, size true, red true, blue true
+```
+
+- A hosted `macos-latest` runner encodes H.264 with `AVAssetWriter`.
+- `AVAssetWriter::finishWriting` is in `objc2-av-foundation` 0.3.2, marked deprecated, and blocks until the file is closed. `block2` is not needed (decision 9).
+- Pixel format `kCVPixelFormatType_32BGRA`, rows copied from top to bottom, red and blue exchanged, gives the right picture.
+- The calls used are in Contracts under `avf.rs`. They compile on `objc2` 0.6.5 and the `objc2-*` crates at 0.3.2. `startSessionAtSourceTime`, `endSessionAtSourceTime` and `appendPixelBuffer_withPresentationTime` exist only with the `objc2-core-media` and `objc2-core-video` features of `objc2-av-foundation`.
+- The spike made each frame's buffer with `CVPixelBufferCreate` and gave the adaptor no attributes, which is simpler than the pool the plan named; `avf.rs` does the same.
 
 ## Architecture decisions
 
@@ -205,11 +218,11 @@ Every failure is `Error::EncodeFailed` with the underlying error's text. That in
 - `finish`: `self.encoder.finish()`.
 - No `unsafe`.
 
-**`avf.rs`.** The Objective-C calls, in order. Task 7 replaces this list with the Rust calls it found to compile and run.
+**`avf.rs`.** The Rust calls Task 7 ran, in order. `struct Writer { writer: Retained<AVAssetWriter>, input: Retained<AVAssetWriterInput>, adaptor: Retained<AVAssetWriterInputPixelBufferAdaptor>, width: usize, height: usize, fps: i32, count: i64 }`.
 
-- `create`: an `AVAssetWriter` for the file URL with the file type `AVFileTypeMPEG4`. An `AVAssetWriterInput` for video with the settings `AVVideoCodecKey` = `AVVideoCodecTypeH264`, `AVVideoWidthKey`, `AVVideoHeightKey`, and `AVVideoCompressionPropertiesKey` holding `AVVideoAverageBitRateKey`; `expectsMediaDataInRealTime` is false. An `AVAssetWriterInputPixelBufferAdaptor` whose buffer attributes are the pixel format `kCVPixelFormatType_32BGRA`, the width and the height. Then `startWriting` and `startSessionAtSourceTime` with time zero. Before any of this, when `path.is_file()`, the file is removed, because `AVAssetWriter` refuses to replace one. A directory at the path is not removed; the writer then fails, which is the case of criterion 10.
-- `push`: wait in steps of 1 ms while the input's `isReadyForMoreMediaData` is false, for at most 10 seconds; after that the error is `EncodeFailed("the encoder did not take a frame within 10 seconds".into())`. Take a buffer from the adaptor's pool, lock it, copy the picture row by row from top to bottom with red and blue exchanged, honoring the buffer's bytes per row, unlock it, and append it with the time `CMTimeMake(k, fps)`. The struct counts the frames it has appended.
-- `finish`: `markAsFinished` on the input, `endSessionAtSourceTime` with `CMTimeMake(count, fps)`, then `finishWriting`. A writer status other than completed is a failure with the writer's `error` text.
+- `create`: when `path.is_file()`, `std::fs::remove_file(path)`, because `AVAssetWriter` refuses to replace a file; a directory is left, and the writer then fails (criterion 10). `NSURL::from_file_path(path)`. `AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4)`. The settings are `NSDictionary::<NSString, AnyObject>::from_slices` with `AVVideoCodecKey` = `AVVideoCodecTypeH264`, `AVVideoWidthKey` and `AVVideoHeightKey` = `NSNumber::new_u32`, and `AVVideoCompressionPropertiesKey` = a dictionary of `AVVideoAverageBitRateKey` = `NSNumber::new_u32(bit_rate)`. `AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(AVMediaTypeVideo, Some(&settings))`, `setExpectsMediaDataInRealTime(false)`, `AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&input, None)`. Then `canAddInput`, `addInput`, `startWriting` and `startSessionAtSourceTime(CMTime::new(0, fps))`. The `AVFoundation` constants are `Option`s; a missing one is `EncodeFailed`.
+- `push`: wait in steps of 1 ms while `isReadyForMoreMediaData()` is false, for at most 10 seconds; after that the error is `EncodeFailed("the encoder did not take a frame within 10 seconds".into())`. `CVPixelBufferCreate(None, width, height, kCVPixelFormatType_32BGRA, None, out)`, taken with `CFRetained::from_raw`. `CVPixelBufferLockBaseAddress`, copy each row from top to bottom to `CVPixelBufferGetBaseAddress + y * CVPixelBufferGetBytesPerRow` with red and blue exchanged, `CVPixelBufferUnlockBaseAddress`. `appendPixelBuffer_withPresentationTime(&buffer, CMTime::new(k, fps))`; `false` is a failure with the writer's `error` text. `count` goes up by one.
+- `finish`: `markAsFinished()`, `endSessionAtSourceTime(CMTime::new(count, fps))`, then `finishWriting()`. `false`, or a `status()` other than `AVAssetWriterStatus::Completed`, is a failure with the writer's `error` text.
 - Every `unsafe` block has a comment that says what makes it sound.
 
 ### `src/control.rs`
@@ -311,7 +324,13 @@ objc2-core-media = "0.3"
 objc2-core-foundation = "0.3"
 ```
 
-When `macos-capture` was built first the table already exists and has `objc2-core-foundation`; the other five lines are added to it. The cargo features each crate needs for the calls above are found in Task 7 and written here.
+When `macos-capture` was built first the table already exists and has `objc2-core-foundation`; the other five lines are added to it. The features each crate needs for the calls above, with default features off (`cargo clippy --target aarch64-apple-darwin` passes with exactly these):
+
+- `objc2-foundation`: `std`, `NSDictionary`, `NSError`, `NSString`, `NSURL`, `NSValue`
+- `objc2-av-foundation`: `std`, `AVAssetWriter`, `AVAssetWriterInput`, `AVMediaFormat`, `AVVideoSettings`, `objc2-core-media`, `objc2-core-video`
+- `objc2-core-video`: `std`, `CVBuffer`, `CVImageBuffer`, `CVPixelBuffer`, `CVReturn`
+- `objc2-core-media`: `std`, `CMTime`
+- `objc2-core-foundation`: `std`
 
 ## File boundary
 
