@@ -150,7 +150,8 @@ impl Browser {
     fn client(&self) -> Client {
         let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
+            // A CI runner's Chrome has taken over 10 s to answer while recording.
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         let (ws, _) = tungstenite::client(self.ws_url().as_str(), stream).unwrap();
         Client { ws, next_id: 1 }
