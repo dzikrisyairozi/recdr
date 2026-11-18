@@ -62,7 +62,7 @@ cargo test
   - Files: `src/encode/mod.rs`, `src/encode/gif.rs`, `src/recorder.rs`
   - Scope: S
 
-- [ ] **Task 3: the manifest of the kept part**
+- [x] **Task 3: the manifest of the kept part**
   - Description: `export::kept`, a function on plain data, with the types an export uses.
   - Steps:
     - `src/model.rs`: `ExportOptions` and `ExportResult`.

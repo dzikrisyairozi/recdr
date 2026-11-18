@@ -251,6 +251,28 @@ pub struct Manifest {
     pub dropped_frames: u64,
 }
 
+/// A checked request to export part of a finished recording.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportOptions {
+    pub id: String,
+    pub out: PathBuf,
+    pub file: PathBuf,
+    pub format: Format,
+    pub from_ms: Option<u64>,
+    pub until_ms: Option<u64>,
+    pub crop: Option<Rect>,
+}
+
+/// Printed by `export`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExportResult {
+    pub path: PathBuf,
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
+    pub frames: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiffEntry {
     pub t_ms: u64,
