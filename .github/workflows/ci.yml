@@ -26,6 +26,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - if: runner.os == 'macOS'
         run: brew install ffmpeg
+      # Branch spike/5-avf only, never merged: plan task 7 of tasks/5-native-mp4.
+      - if: runner.os == 'macOS'
+        run: cargo run --manifest-path spike/avf/Cargo.toml
       # One test at a time: the recording tests measure frame rates, and the macOS
       # runner's three cores cannot keep sixteen parallel recorders at 15 fps.
       - run: cargo test -- --test-threads=1
