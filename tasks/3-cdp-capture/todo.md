@@ -50,7 +50,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/input.rs` (deleted), `src/capture/hook.rs`, `src/lib.rs`, `src/capture/mod.rs`, `src/recorder.rs`, `tests/layers.rs`
   - Scope: S
 
-- [ ] **Task 3: clicks arrive as capture events**
+- [x] **Task 3: clicks arrive as capture events**
   - Description: The Windows capture source owns the hook and reports presses as `CaptureEvent::Click`. The recorder stops naming the hook.
   - Steps:
     - `src/model.rs`: `CaptureEvent::Click`.

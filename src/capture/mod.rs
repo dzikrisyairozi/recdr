@@ -1,7 +1,7 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
 mod fake;
-pub mod hook;
+mod hook;
 mod windows;
 
 use std::time::Duration;
@@ -18,13 +18,21 @@ pub trait CaptureSource {
     fn dropped(&self) -> u64;
 }
 
-pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool) -> Result<Box<dyn CaptureSource>> {
+/// `clicks` asks the source to report presses; the synthetic source ignores it.
+pub fn open(
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
     match resolved.kind {
         ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
             "the synthetic source is broken".into(),
         )),
         ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
-        _ => Ok(Box::new(windows::WgcSource::open(resolved, fps, cursor)?)),
+        _ => Ok(Box::new(windows::WgcSource::open(
+            resolved, fps, cursor, clicks,
+        )?)),
     }
 }
 

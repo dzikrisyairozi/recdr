@@ -95,6 +95,14 @@ pub struct Frame {
 #[derive(Debug, Clone)]
 pub enum CaptureEvent {
     Frame(Frame),
+    /// `x` and `y` are frame pixels relative to the captured area; `button` is
+    /// "left", "middle" or "right".
+    Click {
+        unix_ms: u64,
+        x: i32,
+        y: i32,
+        button: &'static str,
+    },
     Closed,
 }
 

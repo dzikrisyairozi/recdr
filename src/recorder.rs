@@ -5,12 +5,11 @@ use std::time::{Duration, Instant};
 
 use crate::analyze;
 use crate::capture;
-use crate::capture::hook::ClickHook;
 use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind, State,
-    Status, StopReason,
+    CaptureEvent, Click, Format, FrameSelection, Manifest, Mark, RecordingResult, State, Status,
+    StopReason,
 };
 use crate::store::RecordingDir;
 use crate::time;
@@ -28,7 +27,7 @@ pub fn run(dir: &RecordingDir) -> Result<RecordingResult> {
 
 fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i32>)> {
     let options = state.options.clone();
-    let mut source = capture::open(&state.resolved, options.fps, options.cursor)?;
+    let mut source = capture::open(&state.resolved, options.fps, options.cursor, options.clicks)?;
 
     let waited = Instant::now();
     let first = loop {
@@ -44,7 +43,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
                     "no frame arrived within 5 seconds".into(),
                 ));
             }
-            None => {}
+            Some(CaptureEvent::Click { .. }) | None => {}
         }
     };
 
@@ -72,12 +71,8 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         ),
         None => None,
     };
-    let hook = if options.clicks && !matches!(state.resolved.kind, ResolvedKind::Fake(_)) {
-        Some(ClickHook::start()?)
-    } else {
-        None
-    };
     let mut command_exit_code = None;
+    let mut raw_clicks = Vec::new();
 
     let interval_ms = u64::from(1000 / options.fps);
     let mut last_accepted_ms = 0;
@@ -91,6 +86,12 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
                 last_accepted_ms = elapsed_ms;
             }
             Some(CaptureEvent::Frame(_)) | None => {}
+            Some(CaptureEvent::Click {
+                unix_ms,
+                x,
+                y,
+                button,
+            }) => raw_clicks.push((unix_ms, x, y, button)),
             Some(CaptureEvent::Closed) => closed = true,
         }
         let reason = if closed {
@@ -127,14 +128,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             .status();
         let _ = child.wait();
     }
-    let clicks = hook.map_or_else(Vec::new, |hook| {
-        hook.finish(
-            state.resolved.origin,
-            state.width,
-            state.height,
-            state.started_at_unix_ms,
-        )
-    });
+    let clicks = clicks(raw_clicks, state.started_at_unix_ms, duration_ms);
 
     let marks = dir
         .read_marks()?
@@ -159,6 +153,26 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         dropped_frames,
     };
     Ok((manifest, command_exit_code))
+}
+
+/// Presses timed from the first frame, keeping those inside the recording, the rule
+/// marks follow.
+fn clicks(
+    raw: Vec<(u64, i32, i32, &'static str)>,
+    started_at_unix_ms: u64,
+    duration_ms: u64,
+) -> Vec<Click> {
+    raw.into_iter()
+        .filter_map(|(unix_ms, x, y, button)| {
+            let t_ms = unix_ms.checked_sub(started_at_unix_ms)?;
+            (t_ms <= duration_ms).then(|| Click {
+                t_ms,
+                x,
+                y,
+                button: button.to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn finalize(
@@ -249,6 +263,25 @@ mod tests {
             duration_ms: None,
             command: None,
         }
+    }
+
+    #[test]
+    fn clicks_are_timed_from_the_first_frame() {
+        let raw = vec![
+            (900, 1, 1, "left"),
+            (1200, 2, 3, "right"),
+            (1600, 4, 4, "left"),
+        ];
+        let kept = clicks(raw, 1000, 500);
+        assert_eq!(
+            kept,
+            vec![Click {
+                t_ms: 200,
+                x: 2,
+                y: 3,
+                button: "right".into(),
+            }]
+        );
     }
 
     #[test]

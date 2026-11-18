@@ -21,6 +21,7 @@ use windows_capture::settings::{
 use windows_capture::window::Window;
 
 use super::CaptureSource;
+use super::hook::{ClickHook, RawClick};
 use crate::error::{Error, Result};
 use crate::model::{
     CaptureEvent, Frame, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, WindowInfo,
@@ -162,10 +163,29 @@ pub struct WgcSource {
     events: Receiver<CaptureEvent>,
     control: Option<CaptureControl<Handler, String>>,
     dropped: Arc<AtomicU64>,
+    hook: Option<ClickHook>,
+    /// Top-left corner of the captured area in virtual-screen coordinates.
+    origin: (i32, i32),
+    /// Size of the first frame handed out; presses are filtered against it.
+    size: Option<(u32, u32)>,
+}
+
+/// A press in virtual-screen coordinates to a click event relative to the captured
+/// area, or None when it is outside the area.
+fn to_event(click: RawClick, origin: (i32, i32), size: (u32, u32)) -> Option<CaptureEvent> {
+    let (unix_ms, x, y, button) = click;
+    let (x, y) = (x - origin.0, y - origin.1);
+    let inside = (0..size.0 as i32).contains(&x) && (0..size.1 as i32).contains(&y);
+    inside.then_some(CaptureEvent::Click {
+        unix_ms,
+        x,
+        y,
+        button,
+    })
 }
 
 impl WgcSource {
-    pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool) -> Result<Self> {
+    pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool, clicks: bool) -> Result<Self> {
         let (events_tx, events) = mpsc::sync_channel(8);
         let dropped = Arc::new(AtomicU64::new(0));
         let failed = |e: &dyn std::fmt::Display| Error::CaptureFailed(e.to_string());
@@ -194,6 +214,12 @@ impl WgcSource {
             crop,
         };
 
+        // Started before the capture, so a hook failure leaves no capture running.
+        let hook = if clicks {
+            Some(ClickHook::start()?)
+        } else {
+            None
+        };
         let control = match resolved.kind {
             ResolvedKind::Window(id) => {
                 let window = Window::from_raw_hwnd(id as usize as *mut c_void);
@@ -233,14 +259,29 @@ impl WgcSource {
             events,
             control: Some(control),
             dropped,
+            hook,
+            origin: resolved.origin,
+            size: None,
         })
     }
 }
 
 impl CaptureSource for WgcSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
+        if let (Some(hook), Some(size)) = (&self.hook, self.size) {
+            while let Some(click) = hook.try_next() {
+                if let Some(event) = to_event(click, self.origin, size) {
+                    return Ok(Some(event));
+                }
+            }
+        }
         match self.events.recv_timeout(timeout) {
-            Ok(event) => Ok(Some(event)),
+            Ok(event) => {
+                if let (None, CaptureEvent::Frame(frame)) = (self.size, &event) {
+                    self.size = Some((frame.width, frame.height));
+                }
+                Ok(Some(event))
+            }
             Err(RecvTimeoutError::Timeout) => Ok(None),
             Err(RecvTimeoutError::Disconnected) => {
                 Err(Error::CaptureFailed("the capture thread ended".into()))
@@ -258,6 +299,34 @@ impl Drop for WgcSource {
         // `stop` consumes the control, hence the Option.
         if let Some(control) = self.control.take() {
             let _ = control.stop();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_event_keeps_presses_inside_the_area() {
+        let at = |x, y| to_event((7, x, y, "left"), (100, 50), (640, 480));
+        let point = |event: Option<CaptureEvent>| match event {
+            Some(CaptureEvent::Click {
+                unix_ms,
+                x,
+                y,
+                button,
+            }) => {
+                assert_eq!((unix_ms, button), (7, "left"));
+                Some((x, y))
+            }
+            None => None,
+            Some(other) => panic!("{other:?}"),
+        };
+        assert_eq!(point(at(100, 50)), Some((0, 0)));
+        assert_eq!(point(at(739, 529)), Some((639, 479)));
+        for (x, y) in [(740, 50), (99, 50), (100, 530)] {
+            assert_eq!(point(at(x, y)), None, "({x}, {y})");
         }
     }
 }

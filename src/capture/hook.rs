@@ -13,16 +13,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::error::{Error, Result};
-use crate::model::Click;
 use crate::time;
 
-type RawClick = (u64, i32, i32, &'static str);
+/// Wall-clock milliseconds, virtual-screen x and y, button.
+pub type RawClick = (u64, i32, i32, &'static str);
 
 /// The hook procedure has no user data pointer, so it reaches the recorder through this.
 static SENDER: Mutex<Option<Sender<RawClick>>> = Mutex::new(None);
 
 pub struct ClickHook {
-    thread: JoinHandle<()>,
+    thread: Option<JoinHandle<()>>,
     thread_id: u32,
     clicks: Receiver<RawClick>,
 }
@@ -43,7 +43,7 @@ impl ClickHook {
         let thread = thread::spawn(move || hook_thread(&ready_tx));
         match ready.recv() {
             Ok(Ok(thread_id)) => Ok(Self {
-                thread,
+                thread: Some(thread),
                 thread_id,
                 clicks,
             }),
@@ -59,33 +59,20 @@ impl ClickHook {
         }
     }
 
-    /// Stops the hook and returns the clicks inside the captured rectangle, relative
-    /// to its top-left corner and timed from `started_at_unix_ms`.
-    pub fn finish(
-        self,
-        origin: (i32, i32),
-        width: u32,
-        height: u32,
-        started_at_unix_ms: u64,
-    ) -> Vec<Click> {
+    /// The next press the hook has seen, without waiting.
+    pub fn try_next(&self) -> Option<RawClick> {
+        self.clicks.try_recv().ok()
+    }
+}
+
+impl Drop for ClickHook {
+    fn drop(&mut self) {
         // SAFETY: posts a message to a thread id this hook owns; no memory is shared.
         let _ = unsafe { PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
-        let _ = self.thread.join();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
         clear_sender();
-        let (x0, y0) = origin;
-        self.clicks
-            .try_iter()
-            .filter_map(|(unix_ms, x, y, button)| {
-                let (dx, dy) = (x - x0, y - y0);
-                let inside = (0..width as i32).contains(&dx) && (0..height as i32).contains(&dy);
-                inside.then(|| Click {
-                    t_ms: unix_ms.saturating_sub(started_at_unix_ms),
-                    x: dx,
-                    y: dy,
-                    button: button.to_owned(),
-                })
-            })
-            .collect()
     }
 }
 
@@ -100,7 +87,7 @@ fn hook_thread(ready: &Sender<std::result::Result<u32, String>>) {
     // the calls write into, and the hook is removed before the thread ends.
     unsafe {
         let mut msg = MSG::default();
-        // Creates the message queue so WM_QUIT from `finish` cannot be lost.
+        // Creates the message queue so WM_QUIT from `Drop` cannot be lost.
         let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
         let hook = match SetWindowsHookExW(WH_MOUSE_LL, Some(on_mouse), None, 0) {
             Ok(hook) => hook,
@@ -145,7 +132,7 @@ mod tests {
     fn only_one_hook_at_a_time() {
         let first = ClickHook::start().unwrap();
         assert_eq!(ClickHook::start().err().unwrap().code(), "capture_failed");
-        assert!(first.finish((0, 0), 1, 1, 0).is_empty());
-        ClickHook::start().unwrap().finish((0, 0), 1, 1, 0);
+        drop(first);
+        drop(ClickHook::start().unwrap());
     }
 }
