@@ -50,15 +50,16 @@ fn moving_for_one_second() {
     let duration = result["duration_ms"].as_u64().unwrap();
     assert!((1000..=1500).contains(&duration), "{duration}");
     let stored = result["frames_stored"].as_u64().unwrap();
-    assert!(
-        (10..=17).contains(&stored),
-        "{stored} frames: limiter not at 15 fps"
-    );
-
     let manifest: Value =
         serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
             .unwrap();
     let frames = manifest["frames"].as_array().unwrap();
+    let times: Vec<u64> = frames.iter().map(|f| f["t_ms"].as_u64().unwrap()).collect();
+    assert!(
+        (10..=17).contains(&stored),
+        "{stored} frames: limiter not at 15 fps; stored at {times:?} ms"
+    );
+
     assert_eq!(frames.len() as u64, stored);
     assert_eq!(frames[0]["t_ms"], 0);
     let dir = std::path::Path::new(result["dir"].as_str().unwrap());
