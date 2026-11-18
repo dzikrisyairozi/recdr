@@ -24,7 +24,7 @@ cargo test
 
 ## Phase 1: shared code, tested with ffmpeg
 
-- [ ] **Task 1: a test recording with a chosen picture, and the MP4 reader**
+- [x] **Task 1: a test recording with a chosen picture, and the MP4 reader**
   - Description: The two test tools every later task uses. No production code changes.
   - Steps:
     - `src/encode/mod.rs`: the test helper `recording`, and `one_frame` as a call to it.

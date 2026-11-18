@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod mp4;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;

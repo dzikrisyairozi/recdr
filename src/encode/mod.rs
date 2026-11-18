@@ -72,32 +72,34 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
     Ok(image)
 }
 
-/// A recording directory with one solid 64x48 frame at 0 ms, for encoder tests.
+/// A recording directory with one stored frame at 0 ms showing `image`.
 #[cfg(test)]
-pub(crate) fn one_frame(name: &str, clicks: Vec<crate::model::Click>) -> (RecordingDir, Manifest) {
+pub(crate) fn recording(
+    name: &str,
+    image: RgbaImage,
+    duration_ms: u64,
+    fps: u32,
+    clicks: Vec<crate::model::Click>,
+) -> (RecordingDir, Manifest) {
     use crate::model::{Frame, StopReason};
     let out = std::env::temp_dir().join(format!("recdr-unit-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&out);
     let dir = RecordingDir::create(&out, 0).unwrap();
-    let mut writer = dir.frame_writer(64, 48).unwrap();
-    let rgba = [0, 0, 0, 255].repeat(64 * 48);
-    writer
-        .push(
-            Frame {
-                width: 64,
-                height: 48,
-                rgba,
-            },
-            0,
-        )
-        .unwrap();
+    let (width, height) = image.dimensions();
+    let mut writer = dir.frame_writer(width, height).unwrap();
+    let frame = Frame {
+        width,
+        height,
+        rgba: image.into_raw(),
+    };
+    writer.push(frame, 0).unwrap();
     let manifest = Manifest {
         id: String::new(),
-        width: 64,
-        height: 48,
-        fps: 15,
+        width,
+        height,
+        fps,
         started_at_unix_ms: 0,
-        duration_ms: 1000,
+        duration_ms,
         frames: writer.finish(),
         marks: Vec::new(),
         clicks,
@@ -105,6 +107,13 @@ pub(crate) fn one_frame(name: &str, clicks: Vec<crate::model::Click>) -> (Record
         dropped_frames: 0,
     };
     (dir, manifest)
+}
+
+/// One solid black 64x48 frame, 1000 ms, 15 fps.
+#[cfg(test)]
+pub(crate) fn one_frame(name: &str, clicks: Vec<crate::model::Click>) -> (RecordingDir, Manifest) {
+    let black = RgbaImage::from_pixel(64, 48, image::Rgba([0, 0, 0, 255]));
+    recording(name, black, 1000, 15, clicks)
 }
 
 #[cfg(test)]
