@@ -108,7 +108,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `Cargo.toml`, `Cargo.lock`, `src/platform/unix.rs`, `src/platform/mod.rs`, `src/error.rs`, `src/capture/mod.rs`
   - Scope: M
 
-- [ ] **Task 6: the tests and the six layer rules run on every system**
+- [x] **Task 6: the tests and the six layer rules run on every system**
   - Description: Test files stop assuming Windows, and `tests/layers.rs` reaches its final form.
   - Steps:
     - `tests/layers.rs`: rules 2 and 6 as in Contracts; the header comment points to the spec's Project structure section.

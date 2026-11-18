@@ -54,12 +54,39 @@ fn recorder_pid(out: &Path, id: &str) -> u32 {
     state["pid"].as_u64().unwrap() as u32
 }
 
+#[cfg(windows)]
 fn pid_listed(pid: u32) -> bool {
     let output = std::process::Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])
         .output()
         .unwrap();
     String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+}
+
+#[cfg(unix)]
+fn pid_listed(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .unwrap()
+        .status
+        .success()
+}
+
+#[cfg(windows)]
+fn kill(pid: u32) -> Output {
+    std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+fn kill(pid: u32) -> Output {
+    std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .output()
+        .unwrap()
 }
 
 #[test]
@@ -161,10 +188,7 @@ fn killed_recorder_is_crashed() {
     let out = out_dir("start-crash");
     let id = start("moving", &out, &[]);
     let pid = recorder_pid(&out, &id);
-    let killed = std::process::Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .output()
-        .unwrap();
+    let killed = kill(pid);
     assert!(killed.status.success(), "{killed:?}");
     let (code, error) = error(&run("moving", &out, &["stop", &id]));
     assert_eq!(

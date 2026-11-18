@@ -192,19 +192,29 @@ fn static_screen_has_one_keyframe() {
     assert_eq!(ok(&output)["keyframes"].as_array().unwrap().len(), 1);
 }
 
+/// Prints "hi", then waits about two seconds.
+#[cfg(windows)]
+const ECHO_THEN_WAIT: &[&str] = &["cmd", "/c", "echo hi & ping -n 3 127.0.0.1 >nul"];
+#[cfg(unix)]
+const ECHO_THEN_WAIT: &[&str] = &["sh", "-c", "echo hi; sleep 2"];
+
+#[cfg(windows)]
+const EXIT_3: &[&str] = &["cmd", "/c", "exit 3"];
+#[cfg(unix)]
+const EXIT_3: &[&str] = &["sh", "-c", "exit 3"];
+
+/// Runs for about 30 seconds through a child process, so only a tree kill ends it.
+#[cfg(windows)]
+const LONG: &[&str] = &["ping", "-n", "30", "127.0.0.1"];
+#[cfg(unix)]
+const LONG: &[&str] = &["sh", "-c", "sleep 30 & wait"];
+
 #[test]
 fn wrapped_command_sets_the_length_and_keeps_stdout_clean() {
     let (output, _) = record(
         "moving",
         "wrap",
-        &[
-            "--monitor",
-            "0",
-            "--",
-            "cmd",
-            "/c",
-            "echo hi & ping -n 3 127.0.0.1 >nul",
-        ],
+        &[&["--monitor", "0", "--"][..], ECHO_THEN_WAIT].concat(),
     );
     let result = ok(&output);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -220,7 +230,7 @@ fn wrapped_command_exit_code_is_reported_not_returned() {
     let (output, _) = record(
         "moving",
         "wrap-exit",
-        &["--monitor", "0", "--", "cmd", "/c", "exit 3"],
+        &[&["--monitor", "0", "--"][..], EXIT_3].concat(),
     );
     assert_eq!(ok(&output)["command_exit_code"], 3);
 }
@@ -231,17 +241,7 @@ fn time_cap_kills_the_whole_command_tree() {
     let (output, _) = record(
         "moving",
         "wrap-cap",
-        &[
-            "--monitor",
-            "0",
-            "--max-duration",
-            "1s",
-            "--",
-            "ping",
-            "-n",
-            "30",
-            "127.0.0.1",
-        ],
+        &[&["--monitor", "0", "--max-duration", "1s", "--"][..], LONG].concat(),
     );
     assert!(
         begun.elapsed() < std::time::Duration::from_secs(5),
