@@ -2,12 +2,16 @@
 
 pub mod gif;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod avf;
+#[cfg(not(any(windows, target_os = "macos")))]
 mod ffmpeg;
 #[cfg(windows)]
 mod mf;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+use avf::Writer;
+#[cfg(not(any(windows, target_os = "macos")))]
 use ffmpeg::Writer;
 #[cfg(windows)]
 use mf::Writer;
@@ -43,7 +47,7 @@ pub fn mp4(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
 }
 
 /// Fails when an MP4 cannot be written on this machine, before anything is recorded.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn check_mp4() -> Result<()> {
     if ffmpeg::available() {
         Ok(())
@@ -54,7 +58,7 @@ pub fn check_mp4() -> Result<()> {
 
 /// Fails when an MP4 cannot be written on this machine, before anything is recorded:
 /// a one-frame video is written to the temporary directory with the system encoder.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn check_mp4() -> Result<()> {
     let path = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
     let black = RgbaImage::from_pixel(160, 120, image::Rgba([0, 0, 0, 255]));
@@ -389,7 +393,7 @@ mod tests {
     }
 
     /// True where ffmpeg is the encoder.
-    const NEEDS_FFMPEG: bool = cfg!(not(windows));
+    const NEEDS_FFMPEG: bool = cfg!(not(any(windows, target_os = "macos")));
 
     /// True when `ffmpeg -version` runs and exits 0.
     fn ffmpeg_runs() -> bool {

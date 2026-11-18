@@ -6,7 +6,7 @@ use common::{json, out_dir, recdr};
 use serde_json::Value;
 
 /// True where ffmpeg is the encoder.
-const NEEDS_FFMPEG: bool = cfg!(not(windows));
+const NEEDS_FFMPEG: bool = cfg!(not(any(windows, target_os = "macos")));
 
 fn record(fake: &str, name: &str, args: &[&str]) -> (Output, std::path::PathBuf) {
     let out = out_dir(name);

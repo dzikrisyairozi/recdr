@@ -76,10 +76,19 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
         &["windows_capture"],
         &["src/capture/windows.rs", "src/encode/mf.rs"],
     );
+    forbid(
+        &[
+            "objc2_av_foundation",
+            "objc2_core_video",
+            "objc2_core_media",
+            "objc2_core_foundation",
+        ],
+        &["src/encode/avf.rs"],
+    );
 }
 
 #[test]
-fn rule_3_unsafe_only_in_four_files() {
+fn rule_3_unsafe_only_in_five_files() {
     forbid(
         &["unsafe"],
         &[
@@ -87,6 +96,7 @@ fn rule_3_unsafe_only_in_four_files() {
             "src/capture/hook.rs",
             "src/platform/windows.rs",
             "src/platform/unix.rs",
+            "src/encode/avf.rs",
         ],
     );
 }

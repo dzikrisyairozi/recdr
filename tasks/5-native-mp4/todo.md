@@ -151,7 +151,7 @@ cargo test
   - Files: `tasks/5-native-mp4/plan.md`, `tasks/5-native-mp4/acceptance.md` (on the work branch; the program is on `spike/5-avf` only)
   - Scope: S
 
-- [ ] **Task 8: the macOS writer**
+- [x] **Task 8: the macOS writer**
   - Description: `src/encode/avf.rs`, selected on macOS.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: the macOS dependencies.
