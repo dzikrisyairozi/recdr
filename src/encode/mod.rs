@@ -392,6 +392,75 @@ mod tests {
         assert!(!dir.mp4_path().exists());
     }
 
+    /// Red in the top-left quarter, blue in the bottom-right quarter, white elsewhere.
+    fn quarters(width: u32, height: u32) -> RgbaImage {
+        RgbaImage::from_fn(width, height, |x, y| {
+            image::Rgba(if x < width / 2 && y < height / 2 {
+                [255, 0, 0, 255]
+            } else if x >= width / 2 && y >= height / 2 {
+                [0, 0, 255, 255]
+            } else {
+                [255, 255, 255, 255]
+            })
+        })
+    }
+
+    /// The first frame of a video, decoded by ffmpeg. None, with a printed note, when
+    /// ffmpeg does not run.
+    fn first_frame(mp4: &Path) -> Option<RgbaImage> {
+        if !ffmpeg_runs() {
+            println!("not checked: ffmpeg is needed to decode the frame");
+            return None;
+        }
+        let png = mp4.with_extension("png");
+        let status = std::process::Command::new("ffmpeg")
+            .args(["-y", "-loglevel", "error", "-i"])
+            .arg(mp4)
+            .args(["-frames:v", "1"])
+            .arg(&png)
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "ffmpeg could not decode {}",
+            mp4.display()
+        );
+        Some(image::open(&png).unwrap().to_rgba8())
+    }
+
+    #[test]
+    fn first_video_frame_has_the_picture_and_the_ring() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let click = Click {
+            t_ms: 0,
+            x: 240,
+            y: 60,
+            button: "left".into(),
+        };
+        let (dir, manifest) = recording("pixels", quarters(320, 240), 1000, 10, vec![click]);
+        let Some(frame) = first_frame(&mp4(&dir, &manifest).unwrap()) else {
+            return;
+        };
+        let at = |x, y| frame.get_pixel(x, y).0;
+        let [r, g, b, _] = at(40, 30);
+        assert!(r > 180 && g < 90 && b < 90, "top left is {:?}", at(40, 30));
+        let [r, g, b, _] = at(280, 210);
+        assert!(
+            b > 180 && r < 90 && g < 90,
+            "bottom right is {:?}",
+            at(280, 210)
+        );
+        assert!(
+            at(253, 60)[1] < 160,
+            "the ring at (253, 60) is {:?}",
+            at(253, 60)
+        );
+        assert!(at(240, 60)[1] > 200, "inside the ring is {:?}", at(240, 60));
+    }
+
     #[test]
     fn render_draws_rings_without_touching_the_stored_frame() {
         let (dir, manifest) = one_frame("render", Vec::new());

@@ -74,7 +74,7 @@ cargo test
   - Files: `src/encode/mod.rs`, `src/encode/ffmpeg.rs`, `src/control.rs`, `src/recorder.rs`
   - Scope: M
 
-- [ ] **Task 4: the pixel check**
+- [x] **Task 4: the pixel check**
   - Description: The test that catches reversed rows and exchanged colors, passing on ffmpeg before any system encoder exists.
   - Steps:
     - `src/encode/mod.rs`, test module: `quarters`, `first_frame` (which asks `ffmpeg_runs()`, as Contracts says), and the test `first_video_frame_has_the_picture_and_the_ring`.
