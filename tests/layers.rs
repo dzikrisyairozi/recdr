@@ -75,7 +75,11 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
 fn rule_3_unsafe_only_in_three_files() {
     forbid(
         &["unsafe"],
-        &["src/capture/windows.rs", "src/input.rs", "src/platform.rs"],
+        &[
+            "src/capture/windows.rs",
+            "src/capture/hook.rs",
+            "src/platform.rs",
+        ],
     );
 }
 
@@ -84,7 +88,6 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
     let below = [
         "recorder::",
         "capture::",
-        "input::",
         "store::",
         "analyze::",
         "encode::",

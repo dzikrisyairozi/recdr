@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 
 use crate::analyze;
 use crate::capture;
+use crate::capture::hook::ClickHook;
 use crate::encode;
 use crate::error::{Error, Result};
-use crate::input::ClickHook;
 use crate::model::{
     CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind, State,
     Status, StopReason,

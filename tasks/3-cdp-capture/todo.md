@@ -34,7 +34,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/model.rs`, `src/error.rs`, `src/control.rs`, `src/recorder.rs`, `src/store.rs`, `src/request.rs`, `tests/control.rs` (four of the seven are one-line edits)
   - Scope: M
 
-- [ ] **Task 2: the mouse hook moves under `capture`**
+- [x] **Task 2: the mouse hook moves under `capture`**
   - Description: A move with no change in behavior, so the next task's diff shows only the new click path.
   - Steps:
     - `git mv src/input.rs src/capture/hook.rs`.

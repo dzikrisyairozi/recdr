@@ -1,6 +1,7 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
 mod fake;
+pub mod hook;
 mod windows;
 
 use std::time::Duration;
