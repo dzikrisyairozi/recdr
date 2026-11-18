@@ -72,6 +72,10 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
     forbid(&["rmcp", "tokio"], &["src/mcp.rs"]);
     forbid(&["base64"], &["src/mcp.rs", "src/capture/cdp.rs"]);
     forbid(&["tungstenite"], &["src/capture/cdp.rs"]);
+    forbid(
+        &["windows_capture"],
+        &["src/capture/windows.rs", "src/encode/mf.rs"],
+    );
 }
 
 #[test]
@@ -122,8 +126,13 @@ fn rule_5_model_has_no_functions() {
 }
 
 #[test]
-fn rule_6_system_differences_only_in_three_files() {
-    let allowed = ["src/capture/mod.rs", "src/platform/mod.rs", "src/lib.rs"];
+fn rule_6_system_differences_only_in_four_files() {
+    let allowed = [
+        "src/capture/mod.rs",
+        "src/platform/mod.rs",
+        "src/lib.rs",
+        "src/encode/mod.rs",
+    ];
     for (path, code) in source_files() {
         if allowed.contains(&path.as_str()) {
             continue;
@@ -131,6 +140,15 @@ fn rule_6_system_differences_only_in_three_files() {
         let code = code.replace("cfg(test)", "");
         for needle in ["cfg(", "cfg!(", "cfg_attr("] {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
+        }
+    }
+}
+
+#[test]
+fn rule_7_system_encoders_do_not_name_ffmpeg() {
+    for (path, code) in source_files() {
+        if ["src/encode/mf.rs", "src/encode/avf.rs"].contains(&path.as_str()) {
+            assert!(!code.contains("ffmpeg"), "{path} contains \"ffmpeg\"");
         }
     }
 }

@@ -6,7 +6,7 @@ use common::{json, out_dir, recdr};
 use serde_json::Value;
 
 /// True where ffmpeg is the encoder.
-const NEEDS_FFMPEG: bool = true;
+const NEEDS_FFMPEG: bool = cfg!(not(windows));
 
 fn record(fake: &str, name: &str, args: &[&str]) -> (Output, std::path::PathBuf) {
     let out = out_dir(name);
@@ -326,7 +326,7 @@ fn facts_refuses_a_file_that_is_not_an_mp4() {
 }
 
 #[test]
-fn mp4_without_ffmpeg_is_refused_before_anything_is_written() {
+fn mp4_with_no_ffmpeg_on_path() {
     let out = out_dir("no-ffmpeg");
     let empty = out_dir("no-ffmpeg-path");
     let output = recdr()
@@ -334,13 +334,30 @@ fn mp4_without_ffmpeg_is_refused_before_anything_is_written() {
         .env("PATH", &empty)
         .args(["record", "--out"])
         .arg(&out)
-        .args(["--monitor", "0", "--duration", "1s", "--format", "mp4"])
+        .args(["--monitor", "0", "--duration", "2s", "--format", "mp4"])
         .output()
         .unwrap();
-    assert_eq!(error_code(&output), (Some(1), "ffmpeg_not_found".into()));
-    let made = std::fs::read_dir(&out)
-        .unwrap()
-        .filter(|e| e.as_ref().unwrap().path().is_dir())
-        .count();
-    assert_eq!(made, 0);
+    if NEEDS_FFMPEG {
+        assert_eq!(error_code(&output), (Some(1), "ffmpeg_not_found".into()));
+        let made = std::fs::read_dir(&out)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().path().is_dir())
+            .count();
+        assert_eq!(made, 0);
+    } else {
+        let result = ok(&output);
+        let facts = common::mp4::facts(std::path::Path::new(result["mp4"].as_str().unwrap()));
+        assert!(
+            ["avc1", "avc3"].contains(&facts.codec.as_str()),
+            "{}",
+            facts.codec
+        );
+        assert_eq!((facts.width, facts.height), (320, 240));
+        let expected = result["duration_ms"].as_u64().unwrap();
+        assert!(
+            facts.duration_ms.abs_diff(expected) <= 1000 / 15 + 1,
+            "{} vs {expected}",
+            facts.duration_ms
+        );
+    }
 }

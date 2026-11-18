@@ -45,7 +45,7 @@ Each is a choice the spec left to the plan.
 3. **"Linux" means every system that is not Windows or macOS.** The ffmpeg writer is compiled under `cfg(not(any(windows, target_os = "macos")))`, so recdr on a BSD also has MP4.
 4. **A recording with no picture fails before any encoder is started.** `encode::mp4` returns `encode_failed` for a width or height of 0. Today that case is left to ffmpeg, and its test needs ffmpeg installed.
 5. **A failed encode removes `recording.mp4` only when it is a file.** `encode::mp4` checks `path.is_file()` after a failure. A directory in the way is left alone, which is what success criterion 10 sets up.
-6. **The check before recording uses a writer the same way a recording does.** `check_mp4` creates a writer on a file in the temporary directory, pushes one black 16 by 16 frame, finishes and removes the file. No second code path into the system encoder exists.
+6. **The check before recording uses a writer the same way a recording does.** `check_mp4` creates a writer on a file in the temporary directory, pushes one black 160 by 120 frame, finishes and removes the file. No second code path into the system encoder exists.
 7. **The MP4 reader for tests is one file used from two places.** `tests/common/mp4.rs` is declared in `tests/common/mod.rs` for the integration tests, and included in the unit tests of `src/encode/mod.rs` with `#[path]`. It uses only the standard library.
 8. **CI installs ffmpeg on the Linux and macOS runners.** On Linux it is the encoder, and without it no MP4 test runs there. On macOS it decodes the frame for the pixel check, which is the only automated proof of colors and row order on that system. The Windows runner does not get it: the pixel check for Windows runs on the development machine.
 9. **The macOS writer finishes with `finishWriting`.** It is the call that blocks until the file is complete. It is deprecated in favor of a call that takes a completion block, which would need the `block2` crate. Task 7 tries it first. If the bindings do not offer it, adding `block2` is an ask-first change to the spec's Tech stack table.
@@ -57,6 +57,11 @@ Each is a choice the spec left to the plan.
 ### Spec changes made while planning
 
 None.
+
+### Changes made while building
+
+- Task 5, approved by the owner on 2026-11-18: every video is at least 160 by 120. On the development machine (NVIDIA GeForce RTX 3060) the Windows encoder failed with `0xC00D6D60` ("A valid type has not been set for this stream") for 16 by 16, 64 by 64, 96 by 96, 128 by 64, 64 by 128, 128 by 128, 144 by 144, 64 by 320, 320 by 32 and 32 by 320, and wrote 160 by 120, 176 by 144, 192 by 192, 200 by 200, 240 by 240, 256 by 256 and 320 by 64. `windows-capture` 2.0.1 always switches hardware encoding on (`MediaTranscoder::SetHardwareAccelerationEnabled(true)` in its `encoder.rs`), and the limits fit NVENC's minimum of 145 by 49. So the plan's 16 by 16 trial in `check_mp4` failed on every run. `even` became `padded` plus `video_size`, which also pads up to 160 by 120; the trial uses 160 by 120; the spec's "Encoding" section says so. The padding applies to every writer, so the rule is tested on all three systems.
+- Task 5, approved by the owner on 2026-11-18: on Windows the MP4 has a silent AAC track besides the video track. `windows-capture` 2.0.1 adds it whatever the audio settings say, and has no setting to leave it out. `ffprobe` of the 10 second file of decision 13 shows stream 0 `h264` and stream 1 `aac` at 192 kbit/s. The spec's "What the video is" says so; `tests/common/mp4.rs` already reads the first track with a width and skips the audio track.
 
 ## Module contracts
 
@@ -107,7 +112,7 @@ pub fn mp4(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf>
 pub fn check_mp4() -> Result<()>
 
 /// Calls `each` once per video frame, in order, with the frame's number and its picture.
-/// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to an even size.
+/// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to `video_size`.
 /// Returns the number of frames.
 fn video_frames(
     dir: &RecordingDir,
@@ -115,8 +120,11 @@ fn video_frames(
     each: impl FnMut(u64, &RgbaImage) -> Result<()>,
 ) -> Result<u64>
 
-/// The picture with one black column or row added where the width or height is odd.
-fn even(image: RgbaImage) -> RgbaImage
+/// The picture with black columns on the right and rows at the bottom up to `video_size`.
+fn padded(image: RgbaImage) -> RgbaImage
+
+/// The size of the video for a recording of `width` by `height`: even, and at least 160 by 120.
+fn video_size(width: u32, height: u32) -> (u32, u32)
 
 /// Bits per second asked of a system encoder.
 fn bit_rate(width: u32, height: u32, fps: u32) -> u32
@@ -126,13 +134,14 @@ fn write(dir: &RecordingDir, manifest: &Manifest, path: &Path) -> Result<()>
 ```
 
 - `video_frames`: `fps = u64::from(manifest.fps.max(1))`, `frames = (manifest.duration_ms * fps).div_ceil(1000)`, and for each `k` the piece is found with `pieces.iter().rposition(|p| p.t_ms <= k * 1000 / fps)`, or piece 0 when there is none, exactly as lines 65 to 86 of `src/encode/ffmpeg.rs` do today. The rendered and padded picture is kept while the piece does not change. An empty timeline returns `Ok(0)` without calling `each`.
-- `even`: when both sides are even the picture is returned as it is. Otherwise a picture of `width + width % 2` by `height + height % 2`, filled with `Rgba([0, 0, 0, 255])`, gets the original at (0, 0) with `image::imageops::replace`.
+- `video_size`: `((width + width % 2).max(160), (height + height % 2).max(120))`. 160 by 120 is the smallest size recdr asks of an encoder: on the development machine (NVIDIA RTX 3060) the Windows encoder refused 144 by 144 and 320 by 32, and wrote 160 by 120 and 320 by 64. Changed in Task 5, see "Changes made while building".
+- `padded`: when the picture already has `video_size` it is returned as it is. Otherwise a picture of `video_size`, filled with `Rgba([0, 0, 0, 255])`, gets the original at (0, 0) with `image::imageops::replace`.
 - `bit_rate`: `(u64::from(width) * u64::from(height) * u64::from(fps) / 8).clamp(1_000_000, 20_000_000) as u32`.
-- `write`: the size is `manifest.width + manifest.width % 2` by `manifest.height + manifest.height % 2`, and `fps = manifest.fps.max(1)`. It calls `Writer::create(path, width, height, fps, bit_rate(width, height, fps))`, then `let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));`, then `let finished = writer.finish();`, and returns `pushed.and(finished)`: `finish` always runs (decision 10), and an error from the frames wins over one from `finish`.
+- `write`: the size is `video_size(manifest.width, manifest.height)`, and `fps = manifest.fps.max(1)`. It calls `Writer::create(path, width, height, fps, bit_rate(width, height, fps))`, then `let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));`, then `let finished = writer.finish();`, and returns `pushed.and(finished)`: `finish` always runs (decision 10), and an error from the frames wins over one from `finish`.
 - `mp4`: a width or height of 0 returns `Error::EncodeFailed("the recording has no picture".into())`. Otherwise `path = dir.mp4_path()` and `write(dir, manifest, &path)`. When `write` fails and `path.is_file()`, the file is removed (an error from the removal is ignored) and the error from `write` is returned.
 - `check_mp4` has one definition until Task 5 and two from then on, each under a `cfg` attribute: one where ffmpeg is the encoder, one for Windows and macOS.
 - `check_mp4`, where ffmpeg is the encoder: `Ok(())` when `ffmpeg::available()`, else `Err(Error::FfmpegNotFound)`.
-- `check_mp4`, on Windows and macOS: the path is `std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()))`. The trial is `Writer::create(&path, 16, 16, 1, 1_000_000)` and, when that worked, `let pushed = writer.push(0, &black);` with a 16 by 16 picture of `Rgba([0, 0, 0, 255])`, `let finished = writer.finish();` and `pushed.and(finished)`, so a created writer is always finished (decision 10). Then `let _ = std::fs::remove_file(&path);`, whatever the trial returned: the file may not exist, and an error from the removal is ignored. An `Error::EncodeFailed(message)` from the trial is returned as `Error::EncodeFailed(format!("{message}{hint}"))`, with `let hint = if cfg!(windows) { " (on Windows N editions, install the Media Feature Pack)" } else { "" };` inside the function. No constant holds the text, so nothing is unused on a system that does not compile this definition. A writer returns no other variant.
+- `check_mp4`, on Windows and macOS: the path is `std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()))`. The trial is `Writer::create(&path, 160, 120, 1, 1_000_000)` and, when that worked, `let pushed = writer.push(0, &black);` with a 160 by 120 picture of `Rgba([0, 0, 0, 255])`, `let finished = writer.finish();` and `pushed.and(finished)`, so a created writer is always finished (decision 10). Then `let _ = std::fs::remove_file(&path);`, whatever the trial returned: the file may not exist, and an error from the removal is ignored. An `Error::EncodeFailed(message)` from the trial is returned as `Error::EncodeFailed(format!("{message}{hint}"))`, with `let hint = if cfg!(windows) { " (on Windows N editions, install the Media Feature Pack)" } else { "" };` inside the function. No constant holds the text, so nothing is unused on a system that does not compile this definition. A writer returns no other variant.
 
 Test helpers, under `#[cfg(test)]`:
 

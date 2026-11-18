@@ -2,9 +2,15 @@
 
 pub mod gif;
 
+#[cfg(not(windows))]
 mod ffmpeg;
+#[cfg(windows)]
+mod mf;
 
+#[cfg(not(windows))]
 use ffmpeg::Writer;
+#[cfg(windows)]
+use mf::Writer;
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -37,12 +43,38 @@ pub fn mp4(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
 }
 
 /// Fails when an MP4 cannot be written on this machine, before anything is recorded.
+#[cfg(not(windows))]
 pub fn check_mp4() -> Result<()> {
     if ffmpeg::available() {
         Ok(())
     } else {
         Err(Error::FfmpegNotFound)
     }
+}
+
+/// Fails when an MP4 cannot be written on this machine, before anything is recorded:
+/// a one-frame video is written to the temporary directory with the system encoder.
+#[cfg(windows)]
+pub fn check_mp4() -> Result<()> {
+    let path = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
+    let black = RgbaImage::from_pixel(160, 120, image::Rgba([0, 0, 0, 255]));
+    let trial = Writer::create(&path, 160, 120, 1, 1_000_000).and_then(|mut writer| {
+        let pushed = writer.push(0, &black);
+        let finished = writer.finish();
+        pushed.and(finished)
+    });
+    let _ = std::fs::remove_file(&path);
+    trial.map_err(|error| match error {
+        Error::EncodeFailed(message) => {
+            let hint = if cfg!(windows) {
+                " (on Windows N editions, install the Media Feature Pack)"
+            } else {
+                ""
+            };
+            Error::EncodeFailed(format!("{message}{hint}"))
+        }
+        other => other,
+    })
 }
 
 /// Bits per second asked of a system encoder.
@@ -52,8 +84,7 @@ fn bit_rate(width: u32, height: u32, fps: u32) -> u32 {
 
 /// Writes one video file through this system's writer.
 fn write(dir: &RecordingDir, manifest: &Manifest, path: &Path) -> Result<()> {
-    let width = manifest.width + manifest.width % 2;
-    let height = manifest.height + manifest.height % 2;
+    let (width, height) = video_size(manifest.width, manifest.height);
     let fps = manifest.fps.max(1);
     let mut writer = Writer::create(path, width, height, fps, bit_rate(width, height, fps))?;
     let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));
@@ -125,7 +156,7 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
 }
 
 /// Calls `each` once per video frame, in order, with the frame's number and its picture.
-/// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to an even size.
+/// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to `video_size`.
 /// Returns the number of frames.
 fn video_frames(
     dir: &RecordingDir,
@@ -143,24 +174,27 @@ fn video_frames(
         let t_ms = k * 1000 / fps;
         let at = pieces.iter().rposition(|p| p.t_ms <= t_ms).unwrap_or(0);
         if shown.as_ref().is_none_or(|(i, _)| *i != at) {
-            shown = Some((at, even(render(dir, &pieces[at])?)));
+            shown = Some((at, padded(render(dir, &pieces[at])?)));
         }
         each(k, &shown.as_ref().expect("set above").1)?;
     }
     Ok(frames)
 }
 
-/// The picture with one black column or row added where the width or height is odd.
-fn even(image: RgbaImage) -> RgbaImage {
-    let (width, height) = image.dimensions();
-    if width % 2 == 0 && height % 2 == 0 {
+/// The size of the video for a recording of `width` by `height`: even, and at least
+/// 160 by 120, because a GPU encoder can refuse anything smaller (NVENC's minimum is
+/// about 145 by 49).
+fn video_size(width: u32, height: u32) -> (u32, u32) {
+    ((width + width % 2).max(160), (height + height % 2).max(120))
+}
+
+/// The picture with black columns on the right and rows at the bottom up to `video_size`.
+fn padded(image: RgbaImage) -> RgbaImage {
+    let size = video_size(image.width(), image.height());
+    if image.dimensions() == size {
         return image;
     }
-    let mut padded = RgbaImage::from_pixel(
-        width + width % 2,
-        height + height % 2,
-        image::Rgba([0, 0, 0, 255]),
-    );
+    let mut padded = RgbaImage::from_pixel(size.0, size.1, image::Rgba([0, 0, 0, 255]));
     image::imageops::replace(&mut padded, &image, 0, 0);
     padded
 }
@@ -316,20 +350,46 @@ mod tests {
     }
 
     #[test]
-    fn even_adds_a_black_column_and_row() {
+    fn padding_adds_a_black_column_and_row_to_an_odd_size() {
         let white = RgbaImage::from_pixel(321, 241, image::Rgba([255, 255, 255, 255]));
-        let padded = even(white.clone());
-        assert_eq!(padded.dimensions(), (322, 242));
-        assert_eq!(padded.get_pixel(321, 0).0, [0, 0, 0, 255]);
-        assert_eq!(padded.get_pixel(0, 241).0, [0, 0, 0, 255]);
-        assert_eq!(padded.get_pixel(320, 240), white.get_pixel(320, 240));
+        let image = padded(white.clone());
+        assert_eq!(image.dimensions(), (322, 242));
+        assert_eq!(image.get_pixel(321, 0).0, [0, 0, 0, 255]);
+        assert_eq!(image.get_pixel(0, 241).0, [0, 0, 0, 255]);
+        assert_eq!(image.get_pixel(320, 240), white.get_pixel(320, 240));
 
         let already = RgbaImage::from_pixel(320, 240, image::Rgba([9, 8, 7, 255]));
-        assert_eq!(even(already.clone()), already);
+        assert_eq!(padded(already.clone()), already);
+    }
+
+    #[test]
+    fn a_video_is_at_least_160_by_120() {
+        assert_eq!(video_size(64, 48), (160, 120));
+        assert_eq!(video_size(321, 33), (322, 120));
+        assert_eq!(video_size(99, 241), (160, 242));
+        assert_eq!(video_size(1920, 1080), (1920, 1080));
+
+        let white = RgbaImage::from_pixel(64, 48, image::Rgba([255, 255, 255, 255]));
+        let image = padded(white);
+        assert_eq!(image.dimensions(), (160, 120));
+        assert_eq!(image.get_pixel(63, 47).0, [255, 255, 255, 255]);
+        assert_eq!(image.get_pixel(64, 0).0, [0, 0, 0, 255]);
+        assert_eq!(image.get_pixel(0, 48).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_small_recording_makes_a_video() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, manifest) = one_frame("small", Vec::new());
+        let facts = super::mp4::facts(&mp4(&dir, &manifest).unwrap());
+        assert_eq!((facts.width, facts.height), (160, 120));
     }
 
     /// True where ffmpeg is the encoder.
-    const NEEDS_FFMPEG: bool = true;
+    const NEEDS_FFMPEG: bool = cfg!(not(windows));
 
     /// True when `ffmpeg -version` runs and exits 0.
     fn ffmpeg_runs() -> bool {
@@ -459,6 +519,68 @@ mod tests {
             at(253, 60)
         );
         assert!(at(240, 60)[1] > 200, "inside the ring is {:?}", at(240, 60));
+    }
+
+    #[test]
+    fn check_mp4_leaves_no_file() {
+        if NEEDS_FFMPEG {
+            return;
+        }
+        let begun = std::time::Instant::now();
+        let checked = check_mp4();
+        println!(
+            "criterion 11: check_mp4 took {} ms",
+            begun.elapsed().as_millis()
+        );
+        checked.unwrap();
+        let trial = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
+        assert!(!trial.exists(), "{} is left behind", trial.display());
+    }
+
+    #[test]
+    fn finish_with_no_frame_returns() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, mut manifest) = one_frame("no-frame", Vec::new());
+        manifest.frames[0].file = "frames/missing.png".into();
+        let (done, result) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(mp4(&dir, &manifest).map(|_| ()));
+        });
+        let result = result
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("mp4 did not return within 10 seconds");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore = "criterion 12, run by hand with --release"]
+    fn encodes_90_large_frames_in_time() {
+        let (dir, manifest) = recording("large", quarters(1920, 1080), 6000, 15, Vec::new());
+        let begun = std::time::Instant::now();
+        mp4(&dir, &manifest).unwrap();
+        let took = begun.elapsed();
+        println!("criterion 12: {:.1} s", took.as_secs_f64());
+        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+    }
+
+    #[test]
+    #[ignore = "plan decision 13, run by hand on a kept recording"]
+    fn encodes_a_kept_recording() {
+        let (Some(out), Some(id)) = (
+            std::env::var_os("RECDR_KEPT_OUT"),
+            std::env::var("RECDR_KEPT_ID").ok(),
+        ) else {
+            println!("not run: set RECDR_KEPT_OUT and RECDR_KEPT_ID");
+            return;
+        };
+        let dir = RecordingDir::open(Path::new(&out), &id).unwrap();
+        let manifest = dir.read_manifest().unwrap();
+        let path = mp4(&dir, &manifest).unwrap();
+        let bytes = std::fs::metadata(&path).unwrap().len();
+        println!("{} is {bytes} bytes", path.display());
     }
 
     #[test]

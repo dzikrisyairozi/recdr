@@ -47,7 +47,7 @@ cargo test
   - Acceptance:
     - `one_call_per_video_frame`: a test recording of 1000 ms at 10 fps gives 10 calls numbered 0 to 9; one of 1001 ms gives 11 (criterion 4).
     - `a_call_gets_the_picture_of_its_time`: with stored frames at 0 and 250 ms and 10 fps, calls 0 to 2 get the first picture and calls 3 onward the second (criterion 4). The test does not use `recording`, which stores one frame and finishes its writer. It makes its own directory with `RecordingDir::create`, pushes a black frame at 0 ms and a white one at 250 ms through one `dir.frame_writer`, and builds the `Manifest` from the two entries. The frames must differ, because `FrameWriter::push` stores nothing for a frame equal to the one before it.
-    - `even_adds_a_black_column_and_row`: `even` of a 321 by 241 picture is 322 by 242, its pixel (321, 0) and its pixel (0, 241) are `[0, 0, 0, 255]`, and its pixel (320, 240) equals the original's. `even` of a 320 by 240 picture is the same picture (criterion 5).
+    - `even_adds_a_black_column_and_row` (renamed `padding_adds_a_black_column_and_row_to_an_odd_size` in Task 5, when `even` became `padded`): `even` of a 321 by 241 picture is 322 by 242, its pixel (321, 0) and its pixel (0, 241) are `[0, 0, 0, 255]`, and its pixel (320, 240) equals the original's. `even` of a 320 by 240 picture is the same picture (criterion 5).
     - `mp4_is_h264_of_the_recording_length` still passes.
   - Verify: `cargo test --lib encode`, `cargo test --test record mp4`.
   - Dependencies: Task 1
@@ -95,7 +95,7 @@ cargo test
 
 ## Phase 2: Windows
 
-- [ ] **Task 5: the Windows writer, and Windows records MP4 with no ffmpeg**
+- [x] **Task 5: the Windows writer, and Windows records MP4 with no ffmpeg**
   - Description: `src/encode/mf.rs`, selected on Windows. From this commit Windows no longer starts ffmpeg to encode, so the test that expected `ffmpeg_not_found` on every system changes in the same commit.
   - Steps:
     - `src/encode/mf.rs`: `Writer`, as in Contracts.
