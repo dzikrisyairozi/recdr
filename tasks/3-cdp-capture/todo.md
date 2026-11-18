@@ -144,7 +144,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 3: tabs
 
-- [ ] **Task 8: CDP connection and tab list**
+- [x] **Task 8: CDP connection and tab list**
   - Description: `src/capture/cdp.rs` up to `list_tabs`: finding the WebSocket URL, connecting, the first call. No command uses it yet; Task 9 does.
   - Steps:
     - `Cargo.toml`: `tungstenite`.

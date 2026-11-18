@@ -43,6 +43,8 @@ pub enum Error {
         "window, region and monitor capture need Windows; on this system recdr records browser tabs with --cdp"
     )]
     UnsupportedPlatform,
+    #[error("could not connect to the browser: {0}")]
+    CdpConnectFailed(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -67,6 +69,7 @@ impl Error {
             Error::CaptureFailed(_) => "capture_failed",
             Error::EncodeFailed(_) => "encode_failed",
             Error::UnsupportedPlatform => "unsupported_platform",
+            Error::CdpConnectFailed(_) => "cdp_connect_failed",
             Error::Io(_) => "io_error",
         }
     }
@@ -195,9 +198,10 @@ mod tests {
             (Error::CaptureFailed(String::new()), "capture_failed"),
             (Error::EncodeFailed(String::new()), "encode_failed"),
             (Error::UnsupportedPlatform, "unsupported_platform"),
+            (Error::CdpConnectFailed(String::new()), "cdp_connect_failed"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 16);
+        assert_eq!(all.len(), 17);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };

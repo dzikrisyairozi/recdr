@@ -1,0 +1,26 @@
+﻿> cargo fmt --check
+exit code: 0
+
+> cargo clippy --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s
+exit code: 0
+
+> cargo build
+   Compiling recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 48s
+exit code: 0
+
+> cargo clippy --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
+    Checking rmcp v3.11.0
+    Checking tungstenite v0.30.0
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 31s
+exit code: 0
+
+> cargo check --all-targets --target aarch64-apple-darwin
+    Checking rmcp v3.11.0
+    Checking tungstenite v0.30.0
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.08s
+exit code: 0
+

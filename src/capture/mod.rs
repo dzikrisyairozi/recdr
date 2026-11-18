@@ -1,5 +1,6 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
+mod cdp;
 mod fake;
 #[cfg(windows)]
 mod hook;
@@ -10,7 +11,8 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 use crate::model::{
-    CaptureEvent, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, Target, WindowInfo,
+    CaptureEvent, Endpoint, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, TabInfo,
+    Target, WindowInfo,
 };
 
 pub trait CaptureSource {
@@ -58,6 +60,11 @@ fn desktop_source(
     _clicks: bool,
 ) -> Result<Box<dyn CaptureSource>> {
     Err(Error::UnsupportedPlatform)
+}
+
+/// The tabs of the browser at `endpoint`.
+pub fn list_tabs(endpoint: &Endpoint) -> Result<Vec<TabInfo>> {
+    cdp::list_tabs(endpoint)
 }
 
 #[cfg(windows)]

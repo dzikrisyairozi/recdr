@@ -24,6 +24,7 @@ font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
 gif = "0.14"
 base64 = "0.23"
 image = { version = "0.25", default-features = false, features = ["png"] }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-capture = "2.0.1"

@@ -74,6 +74,28 @@ pub struct ResolvedTarget {
     pub origin: (i32, i32),
 }
 
+/// Where a browser's CDP server is. `Http` holds `host:port`; `Ws` holds the whole URL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Endpoint {
+    Port(u16),
+    Http(String),
+    Ws(String),
+    Chrome,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabInfo {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabList {
+    pub tabs: Vec<TabInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowList {
     pub windows: Vec<WindowInfo>,
