@@ -72,13 +72,14 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
 }
 
 #[test]
-fn rule_3_unsafe_only_in_three_files() {
+fn rule_3_unsafe_only_in_four_files() {
     forbid(
         &["unsafe"],
         &[
             "src/capture/windows.rs",
             "src/capture/hook.rs",
-            "src/platform.rs",
+            "src/platform/windows.rs",
+            "src/platform/unix.rs",
         ],
     );
 }

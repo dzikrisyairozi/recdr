@@ -1,6 +1,6 @@
 //! One recording, from the first frame to `result.json`.
 
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 use crate::analyze;
@@ -11,6 +11,7 @@ use crate::model::{
     CaptureEvent, Click, Format, FrameSelection, Manifest, Mark, RecordingResult, State, Status,
     StopReason,
 };
+use crate::platform;
 use crate::store::RecordingDir;
 use crate::time;
 
@@ -59,16 +60,8 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     let mut writer = dir.frame_writer(first.width, first.height)?;
     writer.push(first, 0)?;
 
-    // `cmd /C` because npm and npx are .cmd files that cannot be started directly. The
-    // command's stdout goes to our stderr so our stdout carries only the result JSON.
     let mut child = match &options.command {
-        Some(command) => Some(
-            Command::new("cmd")
-                .arg("/C")
-                .args(command)
-                .stdout(Stdio::from(std::io::stderr()))
-                .spawn()?,
-        ),
+        Some(command) => Some(platform::spawn_command(command)?),
         None => None,
     };
     let mut command_exit_code = None;
@@ -120,13 +113,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     if let Some(mut child) = child
         && stop_reason != StopReason::CommandExited
     {
-        // Child::kill would end cmd.exe and leave the real command running.
-        let _ = Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &child.id().to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let _ = child.wait();
+        platform::kill_tree(&mut child);
     }
     let clicks = clicks(raw_clicks, state.started_at_unix_ms, duration_ms);
 

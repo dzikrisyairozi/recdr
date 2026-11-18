@@ -67,7 +67,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/model.rs`, `src/capture/hook.rs`, `src/capture/windows.rs`, `src/capture/mod.rs`, `src/recorder.rs`
   - Scope: M
 
-- [ ] **Task 4: process code behind `platform/`**
+- [x] **Task 4: process code behind `platform/`**
   - Description: `src/platform.rs` becomes a directory, and the wrapped command is started and ended through it. Still Windows only.
   - Steps:
     - `git mv src/platform.rs src/platform/windows.rs`.
