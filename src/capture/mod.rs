@@ -1,7 +1,9 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
 mod fake;
+#[cfg(windows)]
 mod hook;
+#[cfg(windows)]
 mod windows;
 
 use std::time::Duration;
@@ -30,18 +32,52 @@ pub fn open(
             "the synthetic source is broken".into(),
         )),
         ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
-        _ => Ok(Box::new(windows::WgcSource::open(
-            resolved, fps, cursor, clicks,
-        )?)),
+        ResolvedKind::Window(_) | ResolvedKind::Monitor { .. } => {
+            desktop_source(resolved, fps, cursor, clicks)
+        }
     }
 }
 
+#[cfg(windows)]
+fn desktop_source(
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Ok(Box::new(windows::WgcSource::open(
+        resolved, fps, cursor, clicks,
+    )?))
+}
+
+#[cfg(not(windows))]
+fn desktop_source(
+    _resolved: &ResolvedTarget,
+    _fps: u32,
+    _cursor: bool,
+    _clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Err(Error::UnsupportedPlatform)
+}
+
+#[cfg(windows)]
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     windows::list_windows()
 }
 
+#[cfg(not(windows))]
+pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    Err(Error::UnsupportedPlatform)
+}
+
+#[cfg(windows)]
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     windows::list_monitors()
+}
+
+#[cfg(not(windows))]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
+    Err(Error::UnsupportedPlatform)
 }
 
 /// Binds a target to one window or monitor from the given lists.

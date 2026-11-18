@@ -767,6 +767,7 @@ dependencies = [
  "font8x8",
  "gif",
  "image",
+ "libc",
  "rmcp",
  "schemars",
  "serde",

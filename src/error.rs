@@ -39,6 +39,10 @@ pub enum Error {
     CaptureFailed(String),
     #[error("encoding failed: {0}")]
     EncodeFailed(String),
+    #[error(
+        "window, region and monitor capture need Windows; on this system recdr records browser tabs with --cdp"
+    )]
+    UnsupportedPlatform,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -62,6 +66,7 @@ impl Error {
             Error::TooManyFrames(_) => "too_many_frames",
             Error::CaptureFailed(_) => "capture_failed",
             Error::EncodeFailed(_) => "encode_failed",
+            Error::UnsupportedPlatform => "unsupported_platform",
             Error::Io(_) => "io_error",
         }
     }
@@ -189,9 +194,10 @@ mod tests {
             (Error::TooManyFrames(9), "too_many_frames"),
             (Error::CaptureFailed(String::new()), "capture_failed"),
             (Error::EncodeFailed(String::new()), "encode_failed"),
+            (Error::UnsupportedPlatform, "unsupported_platform"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 15);
+        assert_eq!(all.len(), 16);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };

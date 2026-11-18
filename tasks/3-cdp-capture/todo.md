@@ -91,7 +91,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 2: Linux and macOS
 
-- [ ] **Task 5: recdr compiles off Windows**
+- [x] **Task 5: recdr compiles off Windows**
   - Description: Unix versions of the process calls, `cfg` gates in the two `mod.rs` files, and `unsupported_platform`.
   - Steps:
     - `Cargo.toml`: `libc` under `[target.'cfg(unix)'.dependencies]`.
