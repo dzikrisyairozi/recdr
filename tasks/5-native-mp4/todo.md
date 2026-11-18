@@ -169,12 +169,12 @@ cargo test
   - Scope: M
 
 ### Checkpoint C: macOS is done (needs the pull request)
-- [ ] The `test` job is green on `macos-latest`, and its log shows the pixel check ran and printed no note about a missing ffmpeg.
+- [x] The `test` job is green on `macos-latest`, and its log shows the pixel check ran and printed no note about a missing ffmpeg.
 - [ ] By hand, on the owner's Mac if there is one: criterion 13 for macOS.
 
 ## Phase 4: the rest
 
-- [ ] **Task 9: README and the acceptance run**
+- [x] **Task 9: README and the acceptance run**
   - Description: The README says where ffmpeg is needed, and every criterion has a recorded result.
   - Steps:
     - `README.md`: ffmpeg is needed for MP4 on Linux only; Windows and macOS use the system encoder; Windows N editions need the Media Feature Pack; what is still unchecked from the spec's "Not checked" list.

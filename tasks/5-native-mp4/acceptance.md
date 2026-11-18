@@ -38,3 +38,28 @@ h264 true, size true, red true, blue true
 ```
 
 Exit 0. The plan's "What was measured" and the `avf.rs` contract now hold the results.
+
+## Checkpoint C
+
+- Run 44357118932 (commit `035d26d`, Task 8), job `test (macos-latest)`: the MP4 tests ran through `avf.rs` and passed, none printed a `skipped` note. `cargo test` ended 83 passed, 2 ignored in the library tests; `cargo test --test browser -- --ignored` passed 17 of 17. The job's first two attempts were cancelled before any step: GitHub's annotation was "The job was not acquired by Runner of type hosted even after multiple attempts", with "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times". The third attempt ran.
+- Criterion 13 for macOS by hand: no Mac at hand during the build; the owner plays a file in QuickTime Player and Safari.
+
+## Success criteria
+
+Test names are in `src/encode/mod.rs` (`encode::tests`) or `tests/record.rs`. "CI" is run 44357118932 unless a line says otherwise.
+
+1. `mp4_with_no_ffmpeg_on_path`: passes on this Windows machine and on `windows-latest` (run 44350058854); the headers say H.264, 320 by 240.
+2. `mp4_with_no_ffmpeg_on_path` on `macos-latest`: passes.
+3. `mp4_is_h264_of_the_recording_length` (length within 67 ms of `duration_ms`): passes on Windows here and on all three runners.
+4. `one_call_per_video_frame` and `a_call_gets_the_picture_of_its_time`: pass on every system.
+5. `padding_adds_a_black_column_and_row_to_an_odd_size` and, on each system's writer, `odd_size_is_padded`: pass on all three runners.
+6. `mp4_is_h264_of_the_recording_length` records `--format gif,mp4` and checks both files: passes on all three runners.
+7. `ubuntu-latest`: the MP4 tests ran through ffmpeg (installed by the new CI step) and passed. Without ffmpeg, the Linux body of `mp4_with_no_ffmpeg_on_path` expects `ffmpeg_not_found` and no recording directory; passes.
+8. `rule_7_system_encoders_do_not_name_ffmpeg`: passes on all three runners; with `ffmpeg` added to `mf.rs` it failed (Task 5). On Windows and macOS `check_mp4` is the trial encode, which returns `encode_failed`, never `ffmpeg_not_found`.
+9. `first_video_frame_has_the_picture_and_the_ring`: passes on Windows here and on all three runners (ffmpeg decodes the frame). With the picture flipped it failed at (40, 30) (`evidence/T4-test.log`).
+10. `a_directory_in_the_way_is_left_alone`: passes on Windows here and on all three runners.
+11. `check_mp4_leaves_no_file`: passes on Windows here and on all three runners; about 800 ms here.
+12. 1.6 s for 90 frames of 1920 by 1080 on this Windows machine (Task 5). Not run on macOS.
+13. Not done by hand. Files were decoded with ffmpeg and looked at as frames (Checkpoint A, Task 5); the owner plays a Windows file in the media player and Chrome, and a macOS file in QuickTime Player and Safari.
+14. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass on the three runners, layer tests included. The Windows job still ends red in the later step `cargo test --test browser -- --ignored`: `animation_keeps_fifteen_frames_per_second` (`tests/browser.rs:190-191`) failed on 4 of 5 `windows-latest` runs between #8 and #9, with 1, 4 and 5 dropped frames or fewer than 100 stored. That test belongs to `cdp-capture` and is outside this plan's file boundary.
+15. `README.md` says ffmpeg is needed for MP4 on Linux only.
