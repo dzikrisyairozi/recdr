@@ -124,6 +124,28 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
         }
     }
+    // The app is a front end too. `time::` is left out because the windows part needs
+    // `std::time::Duration`.
+    let below_gui = [
+        "recorder::",
+        "capture::",
+        "store::",
+        "analyze::",
+        "encode::",
+        "draw::",
+        "platform::",
+        "export::",
+        "cli::",
+        "mcp::",
+        "crate::{",
+    ];
+    for (path, code) in source_files() {
+        if path.starts_with("src/gui/") {
+            for needle in below_gui {
+                assert!(!code.contains(needle), "{path} contains {needle:?}");
+            }
+        }
+    }
 }
 
 #[test]

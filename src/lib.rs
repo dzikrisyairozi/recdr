@@ -6,6 +6,7 @@ pub mod draw;
 pub mod encode;
 pub mod error;
 pub mod export;
+pub mod gui;
 pub mod mcp;
 pub mod model;
 pub mod platform;

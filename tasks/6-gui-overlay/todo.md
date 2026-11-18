@@ -115,12 +115,13 @@ cargo test
   - Scope: S
 
 ### Checkpoint A: export is done
-- [ ] The three commands pass on the development machine.
-- [ ] By hand: `recdr record --monitor 0 --duration 5s`, then `recdr export <id> --file cut.gif --from 1s --until 3s --crop 0,0,640,360`; the GIF plays, is 2 seconds long and 640 by 360.
+- [x] The three commands pass on the development machine (T5 logs).
+- [x] By hand: `recdr record --monitor 0 --duration 5s`, then `recdr export <id> --file cut.gif --from 1s --until 3s --crop 0,0,640,360`; the GIF plays, is 2 seconds long and 640 by 360.
+  - 2026-11-19, Windows 11, a 1920 by 1080 monitor: the recording was 5005 ms; export printed `"width":640,"height":360,"duration_ms":2000,"frames":1` (the desktop did not change in that second), and ffprobe read 640 by 360 and 2.000000 s. The recording stayed in the scratchpad and is not committed.
 
 ## Phase 2: the logic part, on every system
 
-- [ ] **Task 6: frame and toolbar arithmetic**
+- [x] **Task 6: frame and toolbar arithmetic**
   - Description: `src/gui/geometry.rs`, with unit tests.
   - Steps:
     - `src/gui/mod.rs`: `pub mod geometry;`. `src/lib.rs`: `pub mod gui;`.
