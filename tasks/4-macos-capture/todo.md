@@ -43,7 +43,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/mod.rs`, `src/capture/windows.rs`
   - Scope: S
 
-- [ ] **Task 2: points and pixels**
+- [x] **Task 2: points and pixels**
   - Description: The arithmetic of the spec's "Positions and sizes", as functions on plain numbers.
   - Steps:
     - `src/capture/mod.rs`: `Display`, `display_bounds`, `to_pixels`, `to_points`, with unit tests.
