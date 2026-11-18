@@ -50,7 +50,22 @@ pub enum Target {
     Process(String),
     Region(Rect),
     Monitor(usize),
+    Tab(TabTarget),
     Fake(FakeKind),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabQuery {
+    Id(String),
+    Text(String),
+}
+
+/// A tab is found by the capture source when it connects, so the query travels unresolved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabTarget {
+    pub cdp: Endpoint,
+    pub query: TabQuery,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,6 +77,7 @@ pub enum ResolvedKind {
         index: usize,
         crop: Option<Rect>,
     },
+    Tab(TabTarget),
     Fake(FakeKind),
 }
 
@@ -144,6 +160,7 @@ pub enum StopReason {
     SizeCapReached,
     CommandExited,
     WindowClosed,
+    TabClosed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

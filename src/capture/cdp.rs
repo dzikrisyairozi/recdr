@@ -1,5 +1,5 @@
 //! Browser tabs through the Chrome DevTools Protocol: finding the browser, the
-//! WebSocket connection, and the list of tabs.
+//! WebSocket connection, the list of tabs, and the screencast of one tab.
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
@@ -8,13 +8,16 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use image::ImageFormat;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{Message, WebSocket};
 
+use super::CaptureSource;
 use crate::error::{Error, Result};
-use crate::model::{Endpoint, TabInfo};
+use crate::model::{CaptureEvent, Endpoint, Frame, TabInfo, TabQuery, TabTarget};
 use crate::platform;
 
 /// Overrides the directory `--cdp chrome` reads `DevToolsActivePort` from.
@@ -23,6 +26,7 @@ pub const CHROME_DIR_ENV: &str = "RECDR_CHROME_USER_DATA_DIR";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const FIRST_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 const IDLE_SLEEP: Duration = Duration::from_millis(1);
 const MAX_MESSAGE_BYTES: usize = 256 << 20;
 /// Longest `/json/version` head or body recdr reads.
@@ -31,6 +35,185 @@ const MAX_HTTP_BYTES: usize = 1 << 20;
 /// The tabs of the browser at `endpoint`.
 pub fn list_tabs(endpoint: &Endpoint) -> Result<Vec<TabInfo>> {
     Connection::open(endpoint).map(|(_, tabs)| tabs)
+}
+
+/// A screencast of one tab. Frames are handed out no faster than the requested rate,
+/// and the browser is asked for the next frame only when none is waiting.
+pub struct CdpSource {
+    conn: Connection,
+    session: String,
+    interval: Duration,
+    held: VecDeque<Frame>,
+    /// `sessionId`s of screencast frames not yet acknowledged, oldest first.
+    unacked: VecDeque<i64>,
+    release_at: Instant,
+}
+
+impl CdpSource {
+    pub fn open(tab: &TabTarget, fps: u32, _clicks: bool) -> Result<Self> {
+        let (mut conn, tabs) = Connection::open(&tab.cdp)?;
+        let target = pick(&tabs, &tab.query)?;
+        let attached = conn.call(
+            "Target.attachToTarget",
+            json!({ "targetId": target.id, "flatten": true }),
+            None,
+            Instant::now() + CALL_TIMEOUT,
+        )?;
+        let session = attached["sessionId"]
+            .as_str()
+            .ok_or_else(|| Error::CaptureFailed("Target.attachToTarget gave no session".into()))?
+            .to_owned();
+        // From here a failure drops the source, and Drop undoes what was switched on.
+        let mut source = CdpSource {
+            conn,
+            session,
+            interval: Duration::from_millis(u64::from(1000 / fps)),
+            held: VecDeque::new(),
+            unacked: VecDeque::new(),
+            release_at: Instant::now(),
+        };
+        source.call(
+            "Emulation.setFocusEmulationEnabled",
+            json!({ "enabled": true }),
+        )?;
+        source.call("Page.enable", json!({}))?;
+        source.call("Page.startScreencast", json!({ "format": "png" }))?;
+        Ok(source)
+    }
+
+    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.conn.call(
+            method,
+            params,
+            Some(&self.session),
+            Instant::now() + CALL_TIMEOUT,
+        )
+    }
+
+    /// Acts on one message from the browser. Some(event) ends `next_event` with it.
+    fn handle(&mut self, incoming: Incoming) -> Result<Option<CaptureEvent>> {
+        let method = incoming.method.as_deref().unwrap_or_default();
+        // The browser reports a detach outside the session, naming the session.
+        if method == "Target.detachedFromTarget" {
+            if incoming.params["sessionId"] == self.session.as_str() {
+                self.conn.closed = true;
+                return Ok(Some(CaptureEvent::Closed));
+            }
+            return Ok(None);
+        }
+        if incoming.session_id.as_deref() != Some(self.session.as_str()) {
+            return Ok(None);
+        }
+        if method == "Page.screencastFrame" {
+            let data = incoming.params["data"].as_str().unwrap_or_default();
+            self.held.push_back(decode(data)?);
+            if let Some(id) = incoming.params["sessionId"].as_i64() {
+                self.unacked.push_back(id);
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl CaptureSource for CdpSource {
+    fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if !self.held.is_empty() && Instant::now() >= self.release_at {
+                let frame = self.held.pop_front();
+                if self.held.is_empty()
+                    && let Some(id) = self.unacked.pop_front()
+                {
+                    self.conn.send(
+                        "Page.screencastFrameAck",
+                        json!({ "sessionId": id }),
+                        Some(&self.session),
+                    );
+                }
+                self.release_at = Instant::now() + self.interval;
+                return Ok(frame.map(CaptureEvent::Frame));
+            }
+            let incoming = match self.conn.backlog.pop_front() {
+                Some(incoming) => incoming,
+                None => match self.conn.poll() {
+                    Polled::Message(incoming) => incoming,
+                    Polled::Closed => return Ok(Some(CaptureEvent::Closed)),
+                    Polled::Idle => {
+                        if Instant::now() >= deadline {
+                            return Ok(None);
+                        }
+                        thread::sleep(IDLE_SLEEP);
+                        continue;
+                    }
+                },
+            };
+            if let Some(event) = self.handle(incoming)? {
+                return Ok(Some(event));
+            }
+        }
+    }
+
+    fn dropped(&self) -> u64 {
+        0
+    }
+
+    fn paced(&self) -> bool {
+        true
+    }
+}
+
+impl Drop for CdpSource {
+    fn drop(&mut self) {
+        if !self.conn.closed {
+            for (method, params) in [
+                ("Page.stopScreencast", json!({})),
+                (
+                    "Emulation.setFocusEmulationEnabled",
+                    json!({ "enabled": false }),
+                ),
+            ] {
+                let deadline = Instant::now() + CLOSE_TIMEOUT;
+                let _ = self
+                    .conn
+                    .call(method, params, Some(&self.session), deadline);
+            }
+        }
+        let _ = self.conn.ws.close(None);
+    }
+}
+
+/// The tab a query names: the whole id, or a title or URL holding the text in any case.
+fn pick<'a>(tabs: &'a [TabInfo], query: &TabQuery) -> Result<&'a TabInfo> {
+    match query {
+        TabQuery::Id(id) => tabs
+            .iter()
+            .find(|tab| tab.id == *id)
+            .ok_or_else(|| Error::TargetNotFound(format!("tab id {id:?}"))),
+        TabQuery::Text(text) => {
+            let needle = text.to_lowercase();
+            let found = tabs.iter().filter(|tab| {
+                tab.title.to_lowercase().contains(&needle)
+                    || tab.url.to_lowercase().contains(&needle)
+            });
+            super::single(found, text, "tab", format!("tab {text:?}"))
+        }
+    }
+}
+
+/// A base64 PNG to an RGBA frame.
+fn decode(data: &str) -> Result<Frame> {
+    let not_png = || Error::CaptureFailed("the browser sent a frame that is not a PNG".into());
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|_| not_png())?;
+    let image = image::load_from_memory_with_format(&bytes, ImageFormat::Png)
+        .map_err(|_| not_png())?
+        .to_rgba8();
+    Ok(Frame {
+        width: image.width(),
+        height: image.height(),
+        rgba: image.into_raw(),
+    })
 }
 
 /// `DevToolsActivePort` contents (port on line 1, path on line 2) to a ws:// URL on 127.0.0.1.
@@ -196,8 +379,12 @@ struct Incoming {
     id: Option<u64>,
     method: Option<String>,
     #[serde(default)]
+    params: Value,
+    #[serde(default)]
     result: Value,
     error: Option<ReplyError>,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -366,6 +553,53 @@ impl Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_reads_a_png_and_refuses_anything_else() {
+        let rgba = vec![255, 0, 0, 255, 0, 0, 255, 128];
+        let image = image::RgbaImage::from_raw(2, 1, rgba.clone()).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, ImageFormat::Png).unwrap();
+        let data = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
+        let frame = decode(&data).unwrap();
+        assert_eq!((frame.width, frame.height), (2, 1));
+        assert_eq!(frame.rgba, rgba);
+        assert_eq!(decode("AAAA").unwrap_err().code(), "capture_failed");
+    }
+
+    fn tab(id: &str, title: &str, url: &str) -> TabInfo {
+        TabInfo {
+            id: id.into(),
+            title: title.into(),
+            url: url.into(),
+        }
+    }
+
+    fn tabs_to_pick() -> Vec<TabInfo> {
+        vec![
+            tab("AB12", "Docs", "http://docs.test/"),
+            tab("CD34", "Inbox", "http://mail.test/inbox"),
+            tab("EF56", "Inbox (2)", "http://other.test/"),
+        ]
+    }
+
+    #[test]
+    fn pick_by_text_in_title_or_url() {
+        let tabs = tabs_to_pick();
+        let text = |t: &str| pick(&tabs, &TabQuery::Text(t.into()));
+        assert_eq!(text("DOC").unwrap().id, "AB12");
+        assert_eq!(text("MAIL.test").unwrap().id, "CD34");
+        assert_eq!(text("inbox").unwrap_err().code(), "ambiguous_target");
+        assert_eq!(text("nothing").unwrap_err().code(), "target_not_found");
+    }
+
+    #[test]
+    fn pick_by_id_matches_the_whole_id() {
+        let tabs = tabs_to_pick();
+        let id = |t: &str| pick(&tabs, &TabQuery::Id(t.into()));
+        assert_eq!(id("CD34").unwrap().title, "Inbox");
+        assert_eq!(id("CD").unwrap_err().code(), "target_not_found");
+    }
 
     #[test]
     fn port_file_url_reads_port_and_path() {

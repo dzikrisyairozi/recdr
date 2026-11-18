@@ -22,6 +22,11 @@ pub trait CaptureSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>>;
     /// Frames the source discarded because the consumer was behind.
     fn dropped(&self) -> u64;
+    /// True when the source hands out frames no faster than the requested rate, so the
+    /// recorder stores every frame it gets.
+    fn paced(&self) -> bool {
+        false
+    }
 }
 
 /// `clicks` asks the source to report presses; the synthetic source ignores it.
@@ -31,11 +36,12 @@ pub fn open(
     cursor: bool,
     clicks: bool,
 ) -> Result<Box<dyn CaptureSource>> {
-    match resolved.kind {
+    match &resolved.kind {
         ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
             "the synthetic source is broken".into(),
         )),
-        ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
+        ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(*kind))),
+        ResolvedKind::Tab(tab) => Ok(Box::new(cdp::CdpSource::open(tab, fps, clicks)?)),
         ResolvedKind::Window(_) | ResolvedKind::Monitor { .. } => {
             desktop_source(resolved, fps, cursor, clicks)
         }
@@ -147,6 +153,10 @@ pub fn resolve(
                 origin: (monitor.bounds.x, monitor.bounds.y),
             })
         }
+        Target::Tab(tab) => Ok(ResolvedTarget {
+            kind: ResolvedKind::Tab(tab.clone()),
+            origin: (0, 0),
+        }),
         Target::Fake(kind) => Ok(ResolvedTarget {
             kind: ResolvedKind::Fake(*kind),
             origin: (0, 0),
@@ -245,6 +255,16 @@ mod tests {
 
     fn resolve_with(target: Target) -> Result<ResolvedTarget> {
         resolve(&target, &windows(), &monitors())
+    }
+
+    #[test]
+    fn tab_target_travels_unresolved() {
+        let tab = crate::model::TabTarget {
+            cdp: Endpoint::Port(9222),
+            query: crate::model::TabQuery::Text("docs".into()),
+        };
+        let resolved = resolve_with(Target::Tab(tab.clone())).unwrap();
+        assert_eq!(resolved.kind, ResolvedKind::Tab(tab));
     }
 
     #[test]

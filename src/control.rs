@@ -21,6 +21,8 @@ use crate::time;
 
 const POLL: Duration = Duration::from_millis(50);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+/// A tab recorder connects to the browser first, which may take its 30 second reply limit.
+const TAB_START_TIMEOUT: Duration = Duration::from_secs(40);
 
 pub fn list_windows() -> Result<WindowList> {
     Ok(WindowList {
@@ -68,6 +70,7 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
     if options.command.is_some() {
         return Err(Error::Usage("start does not take a command".into()));
     }
+    let timeout = start_timeout(&options.target);
     let dir = prepare(options)?;
     let exe = std::env::current_exe()?;
     let pid = platform::spawn_detached(
@@ -80,7 +83,7 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
         // Checked before the state is read, so an error written just before the
         // recorder exited is seen.
         let alive = platform::process_alive(pid);
-        let late = begun.elapsed() >= START_TIMEOUT;
+        let late = begun.elapsed() >= timeout;
         // A read can race the recorder's rename; the next poll sees the new file.
         if let Ok(state) = dir.read_state() {
             if let Some(info) = state.error {
@@ -176,7 +179,7 @@ fn derived_status(dir: &RecordingDir) -> Result<Status> {
         return Ok(Status::Crashed);
     }
     let young = time::now_unix_ms().saturating_sub(state.started_at_unix_ms)
-        < START_TIMEOUT.as_millis() as u64;
+        < start_timeout(&state.options.target).as_millis() as u64;
     if (state.status == Status::Starting && young) || platform::process_alive(state.pid) {
         Ok(Status::Recording)
     } else {
@@ -215,8 +218,16 @@ pub fn frames(
     })
 }
 
-/// Resolves the target and writes the initial state. Nothing is created on disk
-/// when the target cannot be resolved.
+/// How long a detached recorder may take to report its first frame.
+fn start_timeout(target: &Target) -> Duration {
+    match target {
+        Target::Tab(_) => TAB_START_TIMEOUT,
+        _ => START_TIMEOUT,
+    }
+}
+
+/// Resolves a desktop target and writes the initial state. Nothing is created on disk
+/// when a desktop target cannot be resolved; a tab is resolved later, by the recorder.
 fn prepare(options: RecordOptions) -> Result<RecordingDir> {
     if options.formats.contains(&Format::Mp4) && !encode::ffmpeg::available() {
         return Err(Error::FfmpegNotFound);
@@ -226,7 +237,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
             (capture::list_windows()?, Vec::new())
         }
         Target::Region(_) | Target::Monitor(_) => (Vec::new(), capture::list_monitors()?),
-        Target::Fake(_) => (Vec::new(), Vec::new()),
+        Target::Tab(_) | Target::Fake(_) => (Vec::new(), Vec::new()),
     };
     let resolved = capture::resolve(&options.target, &windows, &monitors)?;
     let now = time::now_unix_ms();

@@ -8,8 +8,8 @@ use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    CaptureEvent, Click, Format, FrameSelection, Manifest, Mark, RecordingResult, State, Status,
-    StopReason,
+    CaptureEvent, Click, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind,
+    State, Status, StopReason,
 };
 use crate::platform;
 use crate::store::RecordingDir;
@@ -74,7 +74,9 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
-            Some(CaptureEvent::Frame(frame)) if elapsed_ms - last_accepted_ms >= interval_ms => {
+            Some(CaptureEvent::Frame(frame))
+                if source.paced() || elapsed_ms - last_accepted_ms >= interval_ms =>
+            {
                 writer.push(frame, elapsed_ms)?;
                 last_accepted_ms = elapsed_ms;
             }
@@ -88,7 +90,11 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             Some(CaptureEvent::Closed) => closed = true,
         }
         let reason = if closed {
-            Some(StopReason::WindowClosed)
+            Some(if matches!(state.resolved.kind, ResolvedKind::Tab(_)) {
+                StopReason::TabClosed
+            } else {
+                StopReason::WindowClosed
+            })
         } else if dir.stop_requested() {
             Some(StopReason::Stopped)
         } else if let Some(status) = child.as_mut().map(Child::try_wait).transpose()?.flatten() {

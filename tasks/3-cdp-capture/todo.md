@@ -200,7 +200,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/error.rs`, `src/capture/mod.rs`
   - Scope: S
 
-- [ ] **Task 11: the screencast source**
+- [x] **Task 11: the screencast source**
   - Description: `CdpSource` produces frames, with focus emulation, pacing and clean-up. No clicks yet: the third parameter of `open` is named `_clicks`, and step 4 of Contracts comes in Task 14.
   - Steps:
     - `src/model.rs`: `TabQuery`, `TabTarget`, `Target::Tab`, `ResolvedKind::Tab`, `StopReason::TabClosed`.

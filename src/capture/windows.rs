@@ -220,9 +220,9 @@ impl WgcSource {
         } else {
             None
         };
-        let control = match resolved.kind {
+        let control = match &resolved.kind {
             ResolvedKind::Window(id) => {
-                let window = Window::from_raw_hwnd(id as usize as *mut c_void);
+                let window = Window::from_raw_hwnd(*id as usize as *mut c_void);
                 let settings = Settings::new(
                     window,
                     cursor,
@@ -236,7 +236,7 @@ impl WgcSource {
                 Handler::start_free_threaded(settings).map_err(|e| failed(&e))?
             }
             ResolvedKind::Monitor { index, crop } => {
-                let monitor = Monitor::from_index(index + 1).map_err(|e| failed(&e))?;
+                let monitor = Monitor::from_index(*index + 1).map_err(|e| failed(&e))?;
                 let settings = Settings::new(
                     monitor,
                     cursor,
@@ -245,14 +245,12 @@ impl WgcSource {
                     interval,
                     DirtyRegionSettings::Default,
                     ColorFormat::Rgba8,
-                    flags(crop),
+                    flags(*crop),
                 );
                 Handler::start_free_threaded(settings).map_err(|e| failed(&e))?
             }
-            ResolvedKind::Fake(_) => {
-                return Err(Error::CaptureFailed(
-                    "a synthetic target has no WGC source".into(),
-                ));
+            ResolvedKind::Fake(_) | ResolvedKind::Tab(_) => {
+                return Err(Error::CaptureFailed("this target has no WGC source".into()));
             }
         };
         Ok(Self {
