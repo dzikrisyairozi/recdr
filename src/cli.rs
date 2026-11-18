@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::control;
 use crate::error::{Error, Result};
-use crate::request::{self, RecordRequest};
+use crate::request::{self, ExportRequest, RecordRequest};
 
 #[derive(Parser)]
 #[command(name = "recdr", version, about = "Screen recorder for AI agents")]
@@ -37,6 +37,8 @@ enum Command {
     Status(StatusCmd),
     /// Print paths of stored frames of a finished recording
     Frames(FramesCmd),
+    /// Write a GIF or an MP4 from part of a finished recording
+    Export(ExportCmd),
     /// Run the MCP server on stdio
     Mcp,
     /// The background recorder that `start` spawns
@@ -175,6 +177,40 @@ struct FramesCmd {
     out: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct ExportCmd {
+    /// Recording id
+    id: String,
+    /// Where to write; the extension picks the format, .gif or .mp4. An existing file is replaced
+    #[arg(long)]
+    file: PathBuf,
+    /// Start of the part to keep, e.g. 2s or 1500ms [default: the start of the recording]
+    #[arg(long)]
+    from: Option<String>,
+    /// End of the part to keep [default: the end of the recording]
+    #[arg(long)]
+    until: Option<String>,
+    /// Rectangle x,y,width,height to keep, in pixels from the top-left corner [default: the whole picture]
+    #[arg(long, allow_hyphen_values = true)]
+    crop: Option<String>,
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+impl ExportCmd {
+    fn into_request(self) -> ExportRequest {
+        ExportRequest {
+            id: self.id,
+            file: self.file,
+            from: self.from,
+            until: self.until,
+            crop: self.crop,
+            out: self.out,
+        }
+    }
+}
+
 impl RecordFlags {
     fn into_request(self) -> RecordRequest {
         RecordRequest {
@@ -249,6 +285,7 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
                 },
             ),
         ),
+        Command::Export(cmd) => text(cmd.into_request().into_options().and_then(control::export)),
         Command::Mcp => serve_mcp().map(|()| None),
     };
     match outcome {

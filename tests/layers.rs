@@ -120,7 +120,7 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
             "src/mcp.rs" => "cli::",
             _ => continue,
         };
-        for needle in below.iter().chain([&extra]) {
+        for needle in below.iter().chain([&extra, &"gui::", &"export::"]) {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
         }
     }

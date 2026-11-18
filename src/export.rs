@@ -1,7 +1,84 @@
 //! Writes a GIF or an MP4 from part of a finished recording.
 
-use crate::model::{Click, FrameEntry, Manifest, Rect};
-use crate::store;
+use crate::encode;
+use crate::error::{Error, Result};
+use crate::model::{Click, ExportOptions, ExportResult, Format, FrameEntry, Manifest, Rect};
+use crate::store::{self, RecordingDir};
+
+/// Checks the options against the recording and writes the file. The file is written
+/// next to its target under a `.part` name and renamed over it only when the encoder
+/// succeeds, so a failed export leaves an existing target as it was.
+pub fn run(dir: &RecordingDir, options: &ExportOptions) -> Result<ExportResult> {
+    if dir.read_result()?.is_none() {
+        return Err(Error::RecordingNotFound(dir.id().to_owned()));
+    }
+    let manifest = dir.read_manifest()?;
+    let from = options.from_ms.unwrap_or(0);
+    let until = options.until_ms.unwrap_or(manifest.duration_ms);
+    if !(from < until && until <= manifest.duration_ms) {
+        return Err(Error::Usage(format!(
+            "--from must be before --until, and both inside the recording (0 to {} ms)",
+            manifest.duration_ms
+        )));
+    }
+    let crop = options.crop.as_ref();
+    if let Some(r) = crop {
+        let fits = r.x >= 0
+            && r.y >= 0
+            && r.width >= 2
+            && r.height >= 2
+            && i64::from(r.x) + i64::from(r.width) <= i64::from(manifest.width)
+            && i64::from(r.y) + i64::from(r.height) <= i64::from(manifest.height);
+        if !fits {
+            return Err(Error::Usage(format!(
+                "--crop must lie inside the {}x{} picture and be at least 2x2",
+                manifest.width, manifest.height
+            )));
+        }
+    }
+    if options.format == Format::Mp4 {
+        encode::check_mp4()?;
+    }
+
+    let part = kept(&manifest, from, until, crop);
+    let ext = match options.format {
+        Format::Gif => "gif",
+        Format::Mp4 => "mp4",
+    };
+    let temp = options.file.with_extension(format!("part.{ext}"));
+    let written = match options.format {
+        Format::Gif => encode::gif::encode(dir, &part, crop, &temp),
+        Format::Mp4 => encode::mp4(dir, &part, crop, &temp),
+    };
+    let remove_temp = || {
+        if temp.is_file() {
+            let _ = std::fs::remove_file(&temp);
+        }
+    };
+    let frames = written.map_err(|error| {
+        remove_temp();
+        match error {
+            Error::Io(e) => Error::EncodeFailed(e.to_string()),
+            other => other,
+        }
+    })?;
+    std::fs::rename(&temp, &options.file).map_err(|e| {
+        remove_temp();
+        Error::EncodeFailed(e.to_string())
+    })?;
+
+    let (width, height) = match options.format {
+        Format::Gif => (part.width, part.height),
+        Format::Mp4 => encode::video_size(part.width, part.height),
+    };
+    Ok(ExportResult {
+        path: options.file.clone(),
+        width,
+        height,
+        duration_ms: part.duration_ms,
+        frames,
+    })
+}
 
 /// The manifest of the part of a recording between two times, cut to `crop`.
 pub fn kept(manifest: &Manifest, from_ms: u64, until_ms: u64, crop: Option<&Rect>) -> Manifest {

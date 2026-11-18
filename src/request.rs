@@ -7,7 +7,8 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Endpoint, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery, TabTarget, Target,
+    Endpoint, ExportOptions, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery,
+    TabTarget, Target,
 };
 use crate::time::parse_time;
 
@@ -114,6 +115,46 @@ impl RecordRequest {
             out: resolve_out(self.out)?,
             duration_ms,
             command: self.command,
+        })
+    }
+}
+
+/// What a user asked `export` for, before validation. Also the MCP tool's arguments.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+pub struct ExportRequest {
+    /// Recording id
+    pub id: String,
+    /// Where to write; the extension picks the format, .gif or .mp4
+    pub file: PathBuf,
+    /// Start of the part to keep, such as "1500ms" or "2s"; default the start of the recording
+    pub from: Option<String>,
+    /// End of the part to keep; default the end of the recording
+    pub until: Option<String>,
+    /// Rectangle to keep, "x,y,width,height" in pixels; default the whole picture
+    pub crop: Option<String>,
+    /// Output root; default .recdr in the working directory
+    pub out: Option<PathBuf>,
+}
+
+impl ExportRequest {
+    pub fn into_options(self) -> Result<ExportOptions> {
+        let extension = self
+            .file
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase());
+        let format = match extension.as_deref() {
+            Some("gif") => Format::Gif,
+            Some("mp4") => Format::Mp4,
+            _ => return Err(usage("--file must end in .gif or .mp4")),
+        };
+        Ok(ExportOptions {
+            id: self.id,
+            out: resolve_out(self.out)?,
+            file: std::path::absolute(self.file)?,
+            format,
+            from_ms: self.from.as_deref().map(parse_time).transpose()?,
+            until_ms: self.until.as_deref().map(parse_time).transpose()?,
+            crop: self.crop.as_deref().map(parse_region).transpose()?,
         })
     }
 }
@@ -437,6 +478,31 @@ mod tests {
         let webm = parse_formats("webm").unwrap_err();
         assert_eq!(webm.code(), "usage");
         assert!(webm.to_string().contains("none"), "{webm}");
+    }
+
+    fn export_to(file: &str) -> Result<ExportOptions> {
+        ExportRequest {
+            id: "x".into(),
+            file: file.into(),
+            from: None,
+            until: None,
+            crop: None,
+            out: None,
+        }
+        .into_options()
+    }
+
+    #[test]
+    fn export_extension_picks_the_format() {
+        assert_eq!(export_to("a.gif").unwrap().format, Format::Gif);
+        assert_eq!(export_to("a.GIF").unwrap().format, Format::Gif);
+        assert_eq!(export_to("dir/a.mp4").unwrap().format, Format::Mp4);
+        assert!(export_to("a.gif").unwrap().file.is_absolute());
+        for file in ["a.webm", "a", "gif"] {
+            let error = export_to(file).unwrap_err();
+            assert_eq!(error.code(), "usage", "{file}");
+            assert_eq!(error.to_string(), "--file must end in .gif or .mp4");
+        }
     }
 
     #[test]

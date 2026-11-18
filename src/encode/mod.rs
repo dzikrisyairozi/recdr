@@ -203,7 +203,7 @@ fn video_frames(
 /// The size of the video for a recording of `width` by `height`: even, and at least
 /// 160 by 120, because a GPU encoder can refuse anything smaller (NVENC's minimum is
 /// about 145 by 49).
-fn video_size(width: u32, height: u32) -> (u32, u32) {
+pub fn video_size(width: u32, height: u32) -> (u32, u32) {
     ((width + width % 2).max(160), (height + height % 2).max(120))
 }
 

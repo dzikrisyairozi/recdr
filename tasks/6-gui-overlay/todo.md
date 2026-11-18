@@ -77,7 +77,8 @@ cargo test
   - Files: `src/model.rs`, `src/export.rs`, `src/lib.rs`
   - Scope: S
 
-- [ ] **Task 4: `recdr export`**
+- [x] **Task 4: `recdr export`**
+  - Changed while building: `export_whole` checks the GIF's length against the `duration_ms` the export printed, allowing 5 ms a frame. A 3 second recording ran 3180 ms of GIF time on the first try, because each 67 ms frame is stored as 7 hundredths of a second. The MP4 size in the result is `encode::video_size`, see the plan's step 9 of `run`.
   - Description: The command, end to end, with every error of the spec's table.
   - Steps:
     - `src/export.rs`: `run`.

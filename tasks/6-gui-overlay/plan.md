@@ -181,7 +181,7 @@ pub fn run(dir: &RecordingDir, options: &ExportOptions) -> Result<ExportResult>
 6. `part = kept(&manifest, from, until, crop)`. `temp = options.file.with_extension(format!("part.{ext}"))`, where `ext` is `gif` or `mp4`. The encoder for the format is called with `(dir, &part, crop, &temp)`.
 7. On an error: `temp` is removed when `temp.is_file()`, an `Error::Io(e)` becomes `Error::EncodeFailed(e.to_string())`, and the error is returned.
 8. `std::fs::rename(&temp, &options.file)`; a failure removes `temp` and is `Error::EncodeFailed` with the error's text.
-9. The result: `path` is `options.file`; `width` and `height` are `part`'s, each rounded up to even for `Format::Mp4`; `duration_ms` is `part.duration_ms`; `frames` is the encoder's count.
+9. The result: `path` is `options.file`; `width` and `height` are `part`'s for `Format::Gif` and `encode::video_size(part.width, part.height)` for `Format::Mp4` (changed in Task 4: `native-mp4` pads every video to at least 160 by 120 as well as to an even size, and spec change 2 says the size is that of the pictures in the file; `video_size` became `pub`); `duration_ms` is `part.duration_ms`; `frames` is the encoder's count.
 
 ### `src/control.rs`
 

@@ -1,0 +1,12 @@
+﻿> cargo fmt --check
+exit code: 0
+
+> cargo clippy --all-targets -- -D warnings
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.25s
+exit code: 0
+
+> cargo build
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.37s
+exit code: 0
+
