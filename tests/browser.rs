@@ -503,3 +503,214 @@ fn start_mark_stop_frames_on_a_tab() {
     let path = frames["frames"][0]["path"].as_str().unwrap();
     assert!(Path::new(path).is_file(), "{path}");
 }
+
+/// Starts `recdr record <args> --cdp <port> --out <out>` and returns once it has
+/// stored its first frame.
+fn spawn_record(browser: &Browser, out: &Path, args: &[&str]) -> Child {
+    let child = recdr()
+        .arg("record")
+        .args(args)
+        .args(["--cdp", &browser.port.to_string()])
+        .arg("--out")
+        .arg(out)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !has_a_frame(out) {
+        assert!(
+            Instant::now() < deadline,
+            "no frame stored under {}",
+            out.display()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    child
+}
+
+fn has_a_frame(out: &Path) -> bool {
+    let Ok(recordings) = std::fs::read_dir(out) else {
+        return false;
+    };
+    recordings.flatten().any(|recording| {
+        std::fs::read_dir(recording.path().join("frames"))
+            .is_ok_and(|mut frames| frames.next().is_some())
+    })
+}
+
+fn visibility(client: &mut Client, session: &str) -> Value {
+    client.eval(session, "document.visibilityState")
+}
+
+/// Success criterion 6, for a tab that is not the selected one.
+#[test]
+#[ignore]
+fn background_tab_is_recorded() {
+    let browser = Browser::start("background", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let created = client.call("Target.createTarget", json!({ "url": "about:blank" }), None);
+    let other = client.attach(created["targetId"].as_str().unwrap());
+    assert_eq!(visibility(&mut client, &session), "hidden");
+
+    let child = spawn_record(
+        &browser,
+        &out_dir("background"),
+        &["--tab-id", &tab, "--duration", "3s", "--fps", "15"],
+    );
+    assert_eq!(visibility(&mut client, &other), "visible");
+    let result = ok(&child.wait_with_output().unwrap());
+    let stored = result["frames_stored"].as_u64().unwrap();
+    assert!(stored >= 20, "{stored}");
+    assert_eq!(visibility(&mut client, &session), "hidden");
+}
+
+/// Success criterion 6, for a tab whose window is minimized.
+#[test]
+#[ignore]
+fn minimized_window_is_recorded() {
+    let browser = Browser::start("minimized", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let window = client.call(
+        "Browser.getWindowForTarget",
+        json!({ "targetId": tab }),
+        None,
+    );
+    client.call(
+        "Browser.setWindowBounds",
+        json!({ "windowId": window["windowId"], "bounds": { "windowState": "minimized" } }),
+        None,
+    );
+    assert_eq!(visibility(&mut client, &session), "hidden");
+
+    let result = ok(&run(
+        &browser,
+        &out_dir("minimized"),
+        &[
+            "record",
+            "--tab-id",
+            &tab,
+            "--duration",
+            "3s",
+            "--fps",
+            "15",
+        ],
+    ));
+    let stored = result["frames_stored"].as_u64().unwrap();
+    assert!(stored >= 20, "{stored}");
+    assert_eq!(visibility(&mut client, &session), "hidden");
+}
+
+/// The result of a recording that ended early, with a GIF that has a frame.
+fn ended_with_tab_closed(output: &Output) {
+    let result = ok(output);
+    assert_eq!(result["stop_reason"], "tab_closed");
+    let file = std::fs::File::open(result["gif"].as_str().unwrap()).unwrap();
+    let mut decoder = gif::DecodeOptions::new().read_info(file).unwrap();
+    assert!(decoder.read_next_frame().unwrap().is_some());
+}
+
+/// Success criterion 7, closing the tab.
+#[test]
+#[ignore]
+fn closing_the_tab_ends_with_tab_closed() {
+    let browser = Browser::start("close-tab", &[]);
+    let (mut client, tab, _) = tab_showing(&browser, "/anim");
+    let child = spawn_record(
+        &browser,
+        &out_dir("close-tab"),
+        &["--tab-id", &tab, "--duration", "30s"],
+    );
+    client.call("Target.closeTarget", json!({ "targetId": tab }), None);
+    ended_with_tab_closed(&child.wait_with_output().unwrap());
+}
+
+/// Success criterion 7, ending the browser.
+#[test]
+#[ignore]
+fn ending_the_browser_ends_with_tab_closed() {
+    let mut browser = Browser::start("end-browser", &[]);
+    let (_client, tab, _) = tab_showing(&browser, "/anim");
+    let child = spawn_record(
+        &browser,
+        &out_dir("end-browser"),
+        &["--tab-id", &tab, "--duration", "30s"],
+    );
+    browser.child.kill().unwrap();
+    ended_with_tab_closed(&child.wait_with_output().unwrap());
+}
+
+/// The center pixel of a stored frame.
+fn center(dir: &Path, file: &str) -> [u8; 3] {
+    let image = image::open(dir.join(file)).unwrap().to_rgb8();
+    let pixel = image.get_pixel(image.width() / 2, image.height() / 2);
+    pixel.0
+}
+
+/// Success criteria 8 and 13.
+#[test]
+#[ignore]
+fn navigation_does_not_end_the_recording() {
+    let browser = Browser::start("navigate", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let child = spawn_record(
+        &browser,
+        &out_dir("navigate"),
+        &["--tab-id", &tab, "--duration", "4s"],
+    );
+    // Another site and another page; every call here panics if the browser refuses it.
+    client.navigate(&session, &format!("http://localhost:{}/green", serve()));
+    assert_eq!(client.eval(&session, "document.title"), "green");
+
+    let result = ok(&child.wait_with_output().unwrap());
+    assert_eq!(result["stop_reason"], "duration_reached");
+    let dir = PathBuf::from(result["dir"].as_str().unwrap());
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
+            .unwrap();
+    let frames = manifest["frames"].as_array().unwrap();
+    let file = |frame: &Value| frame["file"].as_str().unwrap().to_owned();
+    assert_eq!(center(&dir, &file(&frames[0])), [255, 255, 255]);
+    assert_eq!(
+        center(&dir, &file(frames.last().unwrap())),
+        [0x00, 0xaa, 0x00]
+    );
+}
+
+/// What a renderer crash does to a recording. Either stop reason is accepted; the test
+/// prints which one happened.
+#[test]
+#[ignore]
+fn renderer_crash_probe() {
+    let browser = Browser::start("crash", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let begun = Instant::now();
+    let child = spawn_record(
+        &browser,
+        &out_dir("crash"),
+        &["--tab-id", &tab, "--duration", "8s"],
+    );
+    // Sent without waiting: the crash may take the reply with it.
+    let crash = json!({
+        "id": 999_999,
+        "method": "Page.navigate",
+        "params": { "url": "chrome://crash" },
+        "sessionId": session,
+    });
+    client.ws.send(Message::text(crash.to_string())).unwrap();
+    let output = child.wait_with_output().unwrap();
+    println!("the crashed recording took {:?}", begun.elapsed());
+    // 8 s of recording and about 6 s of GIF encoding when run alone; 30 s means a hang.
+    assert!(
+        begun.elapsed() < Duration::from_secs(30),
+        "{:?}",
+        begun.elapsed()
+    );
+    let result = ok(&output);
+    let reason = result["stop_reason"].as_str().unwrap();
+    println!("renderer crash gave stop_reason {reason}");
+    assert!(
+        ["tab_closed", "duration_reached"].contains(&reason),
+        "{reason}"
+    );
+}

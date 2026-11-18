@@ -44,8 +44,8 @@ pub struct CdpSource {
     session: String,
     interval: Duration,
     held: VecDeque<Frame>,
-    /// `sessionId`s of screencast frames not yet acknowledged, oldest first.
-    unacked: VecDeque<i64>,
+    /// `sessionId`s of the held screencast frames, acknowledged once all are handed out.
+    unacked: Vec<i64>,
     release_at: Instant,
 }
 
@@ -69,7 +69,7 @@ impl CdpSource {
             session,
             interval: Duration::from_millis(u64::from(1000 / fps)),
             held: VecDeque::new(),
-            unacked: VecDeque::new(),
+            unacked: Vec::new(),
             release_at: Instant::now(),
         };
         source.call(
@@ -108,8 +108,22 @@ impl CdpSource {
             let data = incoming.params["data"].as_str().unwrap_or_default();
             self.held.push_back(decode(data)?);
             if let Some(id) = incoming.params["sessionId"].as_i64() {
-                self.unacked.push_back(id);
+                self.unacked.push(id);
             }
+        }
+        // Acks sent while a navigation is pending can be held until it ends or, across
+        // processes, lost; with two frames unacked the browser sends no more, so a page
+        // that paints once would never arrive. Once the new page has loaded, starting
+        // again resets the count and sends the page as it is.
+        if method == "Page.loadEventFired" {
+            self.unacked.clear();
+            self.conn
+                .send("Page.stopScreencast", json!({}), Some(&self.session));
+            self.conn.send(
+                "Page.startScreencast",
+                json!({ "format": "png" }),
+                Some(&self.session),
+            );
         }
         Ok(None)
     }
@@ -121,14 +135,16 @@ impl CaptureSource for CdpSource {
         loop {
             if !self.held.is_empty() && Instant::now() >= self.release_at {
                 let frame = self.held.pop_front();
-                if self.held.is_empty()
-                    && let Some(id) = self.unacked.pop_front()
-                {
-                    self.conn.send(
-                        "Page.screencastFrameAck",
-                        json!({ "sessionId": id }),
-                        Some(&self.session),
-                    );
+                // Every frame received has now been handed out. Acking all of them
+                // matters: the browser stops sending while two frames are unacked.
+                if self.held.is_empty() {
+                    for id in std::mem::take(&mut self.unacked) {
+                        self.conn.send(
+                            "Page.screencastFrameAck",
+                            json!({ "sessionId": id }),
+                            Some(&self.session),
+                        );
+                    }
                 }
                 self.release_at = Instant::now() + self.interval;
                 return Ok(frame.map(CaptureEvent::Frame));

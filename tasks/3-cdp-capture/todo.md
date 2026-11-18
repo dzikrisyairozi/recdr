@@ -236,7 +236,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/request.rs`, `src/cli.rs`, `tests/tabs.rs`, `tests/browser.rs`
   - Scope: M
 
-- [ ] **Task 13: hidden tabs, closed tabs, navigation and a second client**
+- [x] **Task 13: hidden tabs, closed tabs, navigation and a second client**
   - Description: Browser tests for behavior Task 11 already implements. A failure here is fixed in `src/capture/cdp.rs`.
   - Steps:
     - `tests/browser.rs`: the tests named under Acceptance. Tests that act during a recording start `recdr record` as a child process, wait 1.5 seconds, act through `Client`, then wait for the child.
