@@ -11,7 +11,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use common::{json, out_dir, recdr};
+use common::{Server, json, out_dir, recdr, text};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket};
 
@@ -865,4 +865,35 @@ fn no_click_highlight_installs_nothing() {
     ok(&child.wait_with_output().unwrap());
     client.navigate(&session, &format!("http://127.0.0.1:{}/still", serve()));
     assert_eq!(client.eval(&session, typeof_binding), "undefined");
+}
+
+/// Success criterion 16.
+#[test]
+#[ignore]
+fn mcp_records_a_tab() {
+    let browser = Browser::start("mcp-tab", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let width = client.eval(&session, "innerWidth * devicePixelRatio");
+    let port = browser.port.to_string();
+    let out = out_dir("mcp-tab");
+    let mut server = Server::start(None);
+
+    let listed = server.call("list_tabs", json!({ "cdp": port }));
+    let tabs: Value = serde_json::from_str(&text(&listed)).unwrap();
+    assert!(
+        tabs["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == tab),
+        "{listed}"
+    );
+
+    let recorded = server.call(
+        "record",
+        json!({ "cdp": port, "tab_id": tab, "duration": "2s", "out": out }),
+    );
+    assert_eq!(recorded["content"][1]["type"], "image", "{recorded}");
+    let result: Value = serde_json::from_str(&text(&recorded)).unwrap();
+    assert_eq!(result["width"].as_f64(), width.as_f64());
 }

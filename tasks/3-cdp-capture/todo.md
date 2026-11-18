@@ -271,7 +271,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/cdp.rs`, `tests/browser.rs`
   - Scope: M
 
-- [ ] **Task 15: MCP `list_tabs` and tab arguments**
+- [x] **Task 15: MCP `list_tabs` and tab arguments**
   - Description: The ninth tool and the two changed descriptions. `start_recording` and `record` already accept `cdp`, `tab_id` and `tab` through `RecordRequest`.
   - Steps:
     - `src/mcp.rs`: `TabsParams`, `list_tabs`, the two descriptions.
