@@ -39,7 +39,7 @@ cargo test
   - Files: `src/encode/mod.rs`, `tests/common/mp4.rs`, `tests/common/mod.rs`, `tests/record.rs`
   - Scope: S
 
-- [ ] **Task 2: the video-frame loop and even-size padding**
+- [x] **Task 2: the video-frame loop and even-size padding**
   - Description: The loop and the padding as functions of `src/encode/mod.rs` with unit tests. `ffmpeg::encode` calls them, so behavior is the same.
   - Steps:
     - `src/encode/mod.rs`: `video_frames` and `even`, as `pub(crate)` until Task 3 makes `write` their only caller and they become private.

@@ -72,6 +72,47 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
     Ok(image)
 }
 
+/// Calls `each` once per video frame, in order, with the frame's number and its picture.
+/// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to an even size.
+/// Returns the number of frames.
+pub(crate) fn video_frames(
+    dir: &RecordingDir,
+    manifest: &Manifest,
+    mut each: impl FnMut(u64, &RgbaImage) -> Result<()>,
+) -> Result<u64> {
+    let pieces = timeline(manifest);
+    if pieces.is_empty() {
+        return Ok(0);
+    }
+    let fps = u64::from(manifest.fps.max(1));
+    let frames = (manifest.duration_ms * fps).div_ceil(1000);
+    let mut shown: Option<(usize, RgbaImage)> = None;
+    for k in 0..frames {
+        let t_ms = k * 1000 / fps;
+        let at = pieces.iter().rposition(|p| p.t_ms <= t_ms).unwrap_or(0);
+        if shown.as_ref().is_none_or(|(i, _)| *i != at) {
+            shown = Some((at, even(render(dir, &pieces[at])?)));
+        }
+        each(k, &shown.as_ref().expect("set above").1)?;
+    }
+    Ok(frames)
+}
+
+/// The picture with one black column or row added where the width or height is odd.
+pub(crate) fn even(image: RgbaImage) -> RgbaImage {
+    let (width, height) = image.dimensions();
+    if width % 2 == 0 && height % 2 == 0 {
+        return image;
+    }
+    let mut padded = RgbaImage::from_pixel(
+        width + width % 2,
+        height + height % 2,
+        image::Rgba([0, 0, 0, 255]),
+    );
+    image::imageops::replace(&mut padded, &image, 0, 0);
+    padded
+}
+
 /// A recording directory with one stored frame at 0 ms showing `image`.
 #[cfg(test)]
 pub(crate) fn recording(
@@ -167,6 +208,72 @@ mod tests {
         let rings: Vec<usize> = pieces.iter().map(|p| p.rings.len()).collect();
         assert_eq!(rings, [0, 1, 0]);
         assert_eq!(pieces[1].rings, [(5, 6)]);
+    }
+
+    fn black(width: u32, height: u32) -> RgbaImage {
+        RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]))
+    }
+
+    fn calls(dir: &RecordingDir, manifest: &Manifest) -> Vec<u64> {
+        let mut seen = Vec::new();
+        let count = video_frames(dir, manifest, |k, _| {
+            seen.push(k);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(count, seen.len() as u64);
+        seen
+    }
+
+    #[test]
+    fn one_call_per_video_frame() {
+        let (dir, manifest) = recording("calls-1000", black(8, 8), 1000, 10, Vec::new());
+        assert_eq!(calls(&dir, &manifest), (0..10).collect::<Vec<_>>());
+        let (dir, manifest) = recording("calls-1001", black(8, 8), 1001, 10, Vec::new());
+        assert_eq!(calls(&dir, &manifest), (0..11).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_call_gets_the_picture_of_its_time() {
+        use crate::model::Frame;
+        let out = std::env::temp_dir().join(format!("recdr-unit-{}-times", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        let dir = RecordingDir::create(&out, 0).unwrap();
+        let mut writer = dir.frame_writer(8, 8).unwrap();
+        for (value, t_ms) in [(0, 0), (255, 250)] {
+            let rgba = [value, value, value, 255].repeat(64);
+            let frame = Frame {
+                width: 8,
+                height: 8,
+                rgba,
+            };
+            writer.push(frame, t_ms).unwrap();
+        }
+        let mut manifest = manifest(&[], 500, Vec::new());
+        (manifest.width, manifest.height, manifest.fps) = (8, 8, 10);
+        manifest.frames = writer.finish();
+        assert_eq!(manifest.frames.len(), 2);
+
+        let mut shades = Vec::new();
+        video_frames(&dir, &manifest, |_, image| {
+            shades.push(image.get_pixel(0, 0)[0]);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(shades, [0, 0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn even_adds_a_black_column_and_row() {
+        let white = RgbaImage::from_pixel(321, 241, image::Rgba([255, 255, 255, 255]));
+        let padded = even(white.clone());
+        assert_eq!(padded.dimensions(), (322, 242));
+        assert_eq!(padded.get_pixel(321, 0).0, [0, 0, 0, 255]);
+        assert_eq!(padded.get_pixel(0, 241).0, [0, 0, 0, 255]);
+        assert_eq!(padded.get_pixel(320, 240), white.get_pixel(320, 240));
+
+        let already = RgbaImage::from_pixel(320, 240, image::Rgba([9, 8, 7, 255]));
+        assert_eq!(even(already.clone()), already);
     }
 
     #[test]

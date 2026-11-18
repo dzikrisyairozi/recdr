@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 
-use super::{render, timeline};
+use super::video_frames;
 use crate::error::{Error, Result};
 use crate::model::Manifest;
 use crate::store::RecordingDir;
@@ -34,10 +34,14 @@ pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
             "rgba",
             "-s",
         ])
-        .arg(format!("{}x{}", manifest.width, manifest.height))
+        .arg(format!(
+            "{}x{}",
+            manifest.width + manifest.width % 2,
+            manifest.height + manifest.height % 2
+        ))
         .arg("-r")
         .arg(fps.to_string())
-        .args(["-i", "-", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"])
+        .args(["-i", "-"])
         .args([
             "-c:v",
             "libx264",
@@ -62,32 +66,21 @@ pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
         text
     });
 
-    let pieces = timeline(manifest);
     let mut stdin = child.stdin.take().expect("stdin is piped");
-    let frames = (manifest.duration_ms * fps).div_ceil(1000);
-    let mut shown: Option<(usize, Vec<u8>)> = None;
-    for k in 0..frames {
-        let t_ms = k * 1000 / fps;
-        let Some(at) = pieces
-            .iter()
-            .rposition(|p| p.t_ms <= t_ms)
-            .or((!pieces.is_empty()).then_some(0))
-        else {
-            break;
-        };
-        if shown.as_ref().is_none_or(|(i, _)| *i != at) {
-            shown = Some((at, render(dir, &pieces[at])?.into_raw()));
+    // A write error means ffmpeg exited; its stderr says why, so stop writing and let
+    // the exit status below report it.
+    let mut broken = false;
+    let pushed = video_frames(dir, manifest, |_, image| {
+        if !broken && stdin.write_all(image.as_raw()).is_err() {
+            broken = true;
         }
-        let rgba = &shown.as_ref().expect("set above").1;
-        // A write error means ffmpeg exited; its stderr says why.
-        if stdin.write_all(rgba).is_err() {
-            break;
-        }
-    }
+        Ok(())
+    });
     drop(stdin);
 
     let status = child.wait()?;
     let errors = errors.join().unwrap_or_default();
+    pushed?;
     if !status.success() {
         return Err(failed(format!(
             "ffmpeg exited with {status}: {}",
