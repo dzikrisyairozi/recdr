@@ -100,7 +100,7 @@ cargo test
   - Files: `src/export.rs`, `src/request.rs`, `src/control.rs`, `src/cli.rs`, `tests/layers.rs`, `tests/export.rs`
   - Scope: M
 
-- [ ] **Task 5: the MCP tool `export`**
+- [x] **Task 5: the MCP tool `export`**
   - Description: The same export for an agent.
   - Steps:
     - `src/mcp.rs`: the tool in Contracts.
