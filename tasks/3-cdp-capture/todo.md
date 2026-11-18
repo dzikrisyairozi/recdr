@@ -257,7 +257,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 5: the rest
 
-- [ ] **Task 14: clicks from the page**
+- [x] **Task 14: clicks from the page**
   - Description: The binding, the listener, the scaling, and their removal at the end.
   - Steps:
     - `src/capture/cdp.rs`: `CLICK_LISTENER`, `BINDING`, `click`, the fields `frame_size`, `clicks` and `click_script`, the parameter `clicks` of `open` and its step 4, the `Page.frameNavigated` and `Runtime.bindingCalled` rows of the method table, the two removals in `Drop`.

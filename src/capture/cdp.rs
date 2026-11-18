@@ -19,6 +19,7 @@ use super::CaptureSource;
 use crate::error::{Error, Result};
 use crate::model::{CaptureEvent, Endpoint, Frame, TabInfo, TabQuery, TabTarget};
 use crate::platform;
+use crate::time;
 
 /// Overrides the directory `--cdp chrome` reads `DevToolsActivePort` from.
 pub const CHROME_DIR_ENV: &str = "RECDR_CHROME_USER_DATA_DIR";
@@ -31,6 +32,24 @@ const IDLE_SLEEP: Duration = Duration::from_millis(1);
 const MAX_MESSAGE_BYTES: usize = 256 << 20;
 /// Longest `/json/version` head or body recdr reads.
 const MAX_HTTP_BYTES: usize = 1 << 20;
+/// The page calls this to report a mouse press.
+const BINDING: &str = "__recdrClick";
+
+/// Runs in the recorded tab. Reports top-level mouse presses through the binding;
+/// does nothing in iframes, or once the binding is gone.
+const CLICK_LISTENER: &str = r#"
+(() => {
+  if (window !== window.top || window.__recdrListening) return;
+  window.__recdrListening = true;
+  addEventListener('mousedown', (e) => {
+    if (typeof window.__recdrClick !== 'function') return;
+    window.__recdrClick(JSON.stringify({
+      x: e.clientX, y: e.clientY, button: e.button,
+      w: innerWidth, h: innerHeight,
+    }));
+  }, true);
+})();
+"#;
 
 /// The tabs of the browser at `endpoint`.
 pub fn list_tabs(endpoint: &Endpoint) -> Result<Vec<TabInfo>> {
@@ -43,14 +62,20 @@ pub struct CdpSource {
     conn: Connection,
     session: String,
     interval: Duration,
-    held: VecDeque<Frame>,
+    /// Base64 PNGs received and not yet handed out, oldest first.
+    held: VecDeque<String>,
     /// `sessionId`s of the held screencast frames, acknowledged once all are handed out.
     unacked: Vec<i64>,
     release_at: Instant,
+    /// Size of the latest frame handed out, for scaling clicks.
+    frame_size: Option<(u32, u32)>,
+    clicks: VecDeque<CaptureEvent>,
+    /// Identifier of the new-document script, when clicks are reported.
+    click_script: Option<String>,
 }
 
 impl CdpSource {
-    pub fn open(tab: &TabTarget, fps: u32, _clicks: bool) -> Result<Self> {
+    pub fn open(tab: &TabTarget, fps: u32, clicks: bool) -> Result<Self> {
         let (mut conn, tabs) = Connection::open(&tab.cdp)?;
         let target = pick(&tabs, &tab.query)?;
         let attached = conn.call(
@@ -71,12 +96,25 @@ impl CdpSource {
             held: VecDeque::new(),
             unacked: Vec::new(),
             release_at: Instant::now(),
+            frame_size: None,
+            clicks: VecDeque::new(),
+            click_script: None,
         };
         source.call(
             "Emulation.setFocusEmulationEnabled",
             json!({ "enabled": true }),
         )?;
         source.call("Page.enable", json!({}))?;
+        if clicks {
+            source.call("Runtime.addBinding", json!({ "name": BINDING }))?;
+            let added = source.call(
+                "Page.addScriptToEvaluateOnNewDocument",
+                json!({ "source": CLICK_LISTENER }),
+            )?;
+            let identifier = added["identifier"].as_str().unwrap_or_default();
+            source.click_script = Some(identifier.to_owned());
+            source.call("Runtime.evaluate", json!({ "expression": CLICK_LISTENER }))?;
+        }
         source.call("Page.startScreencast", json!({ "format": "png" }))?;
         Ok(source)
     }
@@ -91,7 +129,7 @@ impl CdpSource {
     }
 
     /// Acts on one message from the browser. Some(event) ends `next_event` with it.
-    fn handle(&mut self, incoming: Incoming) -> Result<Option<CaptureEvent>> {
+    fn handle(&mut self, mut incoming: Incoming) -> Result<Option<CaptureEvent>> {
         let method = incoming.method.as_deref().unwrap_or_default();
         // The browser reports a detach outside the session, naming the session.
         if method == "Target.detachedFromTarget" {
@@ -105,11 +143,37 @@ impl CdpSource {
             return Ok(None);
         }
         if method == "Page.screencastFrame" {
-            let data = incoming.params["data"].as_str().unwrap_or_default();
-            self.held.push_back(decode(data)?);
+            // Decoded when handed out, so a click behind a large frame is read at once.
+            let data = incoming.params["data"].take();
+            self.held
+                .push_back(data.as_str().unwrap_or_default().to_owned());
             if let Some(id) = incoming.params["sessionId"].as_i64() {
                 self.unacked.push(id);
             }
+        }
+        // A new document has no binding; the new-document script installs the listener.
+        if method == "Page.frameNavigated"
+            && incoming.params["frame"]["parentId"].is_null()
+            && self.click_script.is_some()
+        {
+            let params = json!({ "name": BINDING });
+            self.conn
+                .send("Runtime.addBinding", params, Some(&self.session));
+        }
+        if method == "Runtime.bindingCalled"
+            && incoming.params["name"] == BINDING
+            && let Some(frame) = self.frame_size
+            && let Some((x, y, button)) = click(
+                incoming.params["payload"].as_str().unwrap_or_default(),
+                frame,
+            )
+        {
+            self.clicks.push_back(CaptureEvent::Click {
+                unix_ms: time::now_unix_ms(),
+                x,
+                y,
+                button,
+            });
         }
         // Acks sent while a navigation is pending can be held until it ends or, across
         // processes, lost; with two frames unacked the browser sends no more, so a page
@@ -133,8 +197,27 @@ impl CaptureSource for CdpSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
         let deadline = Instant::now() + timeout;
         loop {
+            // Everything already waiting is read first, so a click gets its time when
+            // it arrives and not after the frames ahead of it are stored.
+            loop {
+                let incoming = match self.conn.backlog.pop_front() {
+                    Some(incoming) => incoming,
+                    None => match self.conn.poll() {
+                        Polled::Message(incoming) => incoming,
+                        Polled::Closed => return Ok(Some(CaptureEvent::Closed)),
+                        Polled::Idle => break,
+                    },
+                };
+                if let Some(event) = self.handle(incoming)? {
+                    return Ok(Some(event));
+                }
+            }
+            if let Some(click) = self.clicks.pop_front() {
+                return Ok(Some(click));
+            }
             if !self.held.is_empty() && Instant::now() >= self.release_at {
-                let frame = self.held.pop_front();
+                let frame = decode(&self.held.pop_front().unwrap_or_default())?;
+                self.frame_size = Some((frame.width, frame.height));
                 // Every frame received has now been handed out. Acking all of them
                 // matters: the browser stops sending while two frames are unacked.
                 if self.held.is_empty() {
@@ -147,25 +230,12 @@ impl CaptureSource for CdpSource {
                     }
                 }
                 self.release_at = Instant::now() + self.interval;
-                return Ok(frame.map(CaptureEvent::Frame));
+                return Ok(Some(CaptureEvent::Frame(frame)));
             }
-            let incoming = match self.conn.backlog.pop_front() {
-                Some(incoming) => incoming,
-                None => match self.conn.poll() {
-                    Polled::Message(incoming) => incoming,
-                    Polled::Closed => return Ok(Some(CaptureEvent::Closed)),
-                    Polled::Idle => {
-                        if Instant::now() >= deadline {
-                            return Ok(None);
-                        }
-                        thread::sleep(IDLE_SLEEP);
-                        continue;
-                    }
-                },
-            };
-            if let Some(event) = self.handle(incoming)? {
-                return Ok(Some(event));
+            if Instant::now() >= deadline {
+                return Ok(None);
             }
+            thread::sleep(IDLE_SLEEP);
         }
     }
 
@@ -181,13 +251,21 @@ impl CaptureSource for CdpSource {
 impl Drop for CdpSource {
     fn drop(&mut self) {
         if !self.conn.closed {
-            for (method, params) in [
+            let mut undo = vec![
                 ("Page.stopScreencast", json!({})),
                 (
                     "Emulation.setFocusEmulationEnabled",
                     json!({ "enabled": false }),
                 ),
-            ] {
+            ];
+            if let Some(identifier) = &self.click_script {
+                undo.push(("Runtime.removeBinding", json!({ "name": BINDING })));
+                undo.push((
+                    "Page.removeScriptToEvaluateOnNewDocument",
+                    json!({ "identifier": identifier }),
+                ));
+            }
+            for (method, params) in undo {
                 let deadline = Instant::now() + CLOSE_TIMEOUT;
                 let _ = self
                     .conn
@@ -214,6 +292,25 @@ fn pick<'a>(tabs: &'a [TabInfo], query: &TabQuery) -> Result<&'a TabInfo> {
             super::single(found, text, "tab", format!("tab {text:?}"))
         }
     }
+}
+
+/// A `Runtime.bindingCalled` payload to frame pixels and a button name.
+fn click(payload: &str, frame: (u32, u32)) -> Option<(i32, i32, &'static str)> {
+    let press: Value = serde_json::from_str(payload).ok()?;
+    let number = |key: &str| press[key].as_f64();
+    let (w, h) = (number("w")?, number("h")?);
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let button = match press["button"].as_u64()? {
+        0 => "left",
+        1 => "middle",
+        2 => "right",
+        _ => return None,
+    };
+    let x = (number("x")? * f64::from(frame.0) / w).round() as i32;
+    let y = (number("y")? * f64::from(frame.1) / h).round() as i32;
+    Some((x, y, button))
 }
 
 /// A base64 PNG to an RGBA frame.
@@ -569,6 +666,20 @@ impl Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn click_scales_css_pixels_to_frame_pixels() {
+        let press = |button: u32, w: u32| {
+            format!(r#"{{"x":100,"y":50,"button":{button},"w":{w},"h":625}}"#)
+        };
+        let frame = (2528, 1250);
+        assert_eq!(click(&press(0, 1264), frame), Some((200, 100, "left")));
+        assert_eq!(click(&press(1, 1264), frame), Some((200, 100, "middle")));
+        assert_eq!(click(&press(2, 1264), frame), Some((200, 100, "right")));
+        assert_eq!(click(&press(3, 1264), frame), None);
+        assert_eq!(click(&press(0, 0), frame), None);
+        assert_eq!(click("not json", frame), None);
+    }
 
     #[test]
     fn decode_reads_a_png_and_refuses_anything_else() {

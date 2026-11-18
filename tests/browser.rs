@@ -224,6 +224,17 @@ impl Client {
         }
     }
 
+    /// A left press and release at CSS position (x, y). Returns when the press was
+    /// sent, in Unix milliseconds.
+    fn press(&mut self, session: &str, x: u32, y: u32) -> u64 {
+        let sent = unix_ms();
+        for kind in ["mousePressed", "mouseReleased"] {
+            let event = json!({ "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1 });
+            self.call("Input.dispatchMouseEvent", event, Some(session));
+        }
+        sent
+    }
+
     /// Ids of the page targets, in the browser's order.
     fn tab_ids(&mut self) -> Vec<String> {
         let result = self.call("Target.getTargets", json!({}), None);
@@ -713,4 +724,145 @@ fn renderer_crash_probe() {
         ["tab_closed", "duration_reached"].contains(&reason),
         "{reason}"
     );
+}
+
+fn unix_ms() -> u64 {
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    since.unwrap().as_millis() as u64
+}
+
+fn manifest_of(result: &Value) -> Value {
+    serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap()).unwrap()
+}
+
+/// The pixels of the 40x40 square centered on (x, y) in an RGBA buffer `width` wide.
+fn square(rgba: &[u8], width: u32, x: i32, y: i32) -> Vec<[u8; 3]> {
+    let mut pixels = Vec::new();
+    for row in y - 20..y + 20 {
+        for column in x - 20..x + 20 {
+            let at = (row as usize * width as usize + column as usize) * 4;
+            pixels.push([rgba[at], rgba[at + 1], rgba[at + 2]]);
+        }
+    }
+    pixels
+}
+
+/// The RGBA pixels of the GIF frame on screen at `t_ms`, and the GIF's width.
+fn gif_frame_at(path: &str, t_ms: u64) -> (Vec<u8>, u32) {
+    let mut options = gif::DecodeOptions::new();
+    options.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = options
+        .read_info(std::fs::File::open(path).unwrap())
+        .unwrap();
+    let width = u32::from(decoder.width());
+    let mut ends_at = 0;
+    while let Some(frame) = decoder.read_next_frame().unwrap() {
+        ends_at += u64::from(frame.delay) * 10;
+        if ends_at > t_ms {
+            return (frame.buffer.to_vec(), width);
+        }
+    }
+    panic!("the GIF ends before {t_ms} ms");
+}
+
+/// Success criterion 9.
+#[test]
+#[ignore]
+fn press_is_recorded_in_frame_pixels() {
+    for (name, scale, extra) in [
+        ("press-1", 1, &[][..]),
+        ("press-2", 2, &["--force-device-scale-factor=2"][..]),
+    ] {
+        let browser = Browser::start(name, extra);
+        let (mut client, tab, session) = tab_showing(&browser, "/anim");
+        let child = spawn_record(
+            &browser,
+            &out_dir(name),
+            &["--tab-id", &tab, "--duration", "5s"],
+        );
+        std::thread::sleep(Duration::from_millis(500));
+        let sent = client.press(&session, 100, 50);
+        std::thread::sleep(Duration::from_millis(300));
+        client.navigate(&session, &format!("http://localhost:{}/green", serve()));
+        std::thread::sleep(Duration::from_secs(1));
+        client.press(&session, 100, 50);
+        let result = ok(&child.wait_with_output().unwrap());
+
+        let manifest = manifest_of(&result);
+        let clicks = manifest["clicks"].as_array().unwrap();
+        assert_eq!(clicks.len(), 2, "{name}: {clicks:?}");
+        let click = &clicks[0];
+        assert_eq!(click["button"], "left", "{name}");
+        assert_eq!(
+            (click["x"].clone(), click["y"].clone()),
+            (json!(100 * scale), json!(50 * scale)),
+            "{name}"
+        );
+        let t_ms = click["t_ms"].as_u64().unwrap();
+        let expected = sent - manifest["started_at_unix_ms"].as_u64().unwrap();
+        println!("{name}: click at {t_ms} ms, sent at {expected} ms");
+        assert!(
+            t_ms.abs_diff(expected) <= 200,
+            "{name}: t_ms {t_ms}, sent at {expected}"
+        );
+        let (x, y) = (100 * scale, 50 * scale);
+
+        // The stored frame on screen at the click has no ring.
+        let dir = PathBuf::from(result["dir"].as_str().unwrap());
+        let shown = manifest["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .rfind(|frame| frame["t_ms"].as_u64().unwrap() <= t_ms)
+            .unwrap();
+        let stored = image::open(dir.join(shown["file"].as_str().unwrap()))
+            .unwrap()
+            .to_rgba8();
+        let width = stored.width();
+        assert!(
+            square(stored.as_raw(), width, x, y)
+                .iter()
+                .all(|p| *p == [255, 255, 255]),
+            "{name}: the stored frame is not white around the click"
+        );
+
+        // The GIF draws one 100 ms later.
+        let (rgba, gif_width) = gif_frame_at(result["gif"].as_str().unwrap(), t_ms + 100);
+        assert_eq!(gif_width, width, "{name}");
+        assert!(
+            square(&rgba, gif_width, x, y)
+                .iter()
+                .any(|p| p.iter().any(|c| *c < 200)),
+            "{name}: the GIF shows no ring at the click"
+        );
+    }
+}
+
+/// Success criterion 10.
+#[test]
+#[ignore]
+fn no_click_highlight_installs_nothing() {
+    let typeof_binding = "typeof window.__recdrClick";
+    let browser = Browser::start("no-click", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+
+    let child = spawn_record(
+        &browser,
+        &out_dir("no-click"),
+        &["--tab-id", &tab, "--duration", "2s", "--no-click-highlight"],
+    );
+    assert_eq!(client.eval(&session, typeof_binding), "undefined");
+    client.press(&session, 100, 50);
+    let result = ok(&child.wait_with_output().unwrap());
+    assert_eq!(manifest_of(&result)["clicks"], json!([]));
+
+    let child = spawn_record(
+        &browser,
+        &out_dir("with-click"),
+        &["--tab-id", &tab, "--duration", "2s"],
+    );
+    assert_eq!(client.eval(&session, typeof_binding), "function");
+    ok(&child.wait_with_output().unwrap());
+    client.navigate(&session, &format!("http://127.0.0.1:{}/still", serve()));
+    assert_eq!(client.eval(&session, typeof_binding), "undefined");
 }
