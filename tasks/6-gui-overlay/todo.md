@@ -145,7 +145,8 @@ cargo test
   - Files: `src/gui/mod.rs`, `src/gui/geometry.rs`, `src/lib.rs`, `tests/layers.rs`
   - Scope: M
 
-- [ ] **Task 7: the state machine**
+- [x] **Task 7: the state machine**
+  - Seen while building: one full `cargo test` run took 14.7 s for the library tests (5.6 s usual) and `encode::tests::finish_with_no_frame_returns` (native-mp4) hit its 10 second limit. The next nine runs passed. Not changed here.
   - Description: `src/gui/state.rs`: every row of the table in Contracts, with a unit test per row.
   - Steps:
     - `src/gui/mod.rs`: `pub mod state;`.

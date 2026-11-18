@@ -21,7 +21,7 @@ pub const FAKE_SOURCE_ENV: &str = "RECDR_FAKE_SOURCE";
 
 /// What a user asked for, before validation. Every field is optional so the CLI
 /// and the MCP server can fill it from their own input shapes.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct RecordRequest {
     pub window_id: Option<u64>,

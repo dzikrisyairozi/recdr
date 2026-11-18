@@ -12,7 +12,7 @@ pub struct Rect {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowInfo {
     /// The Win32 window handle as a number.
     pub id: u64,
@@ -24,7 +24,7 @@ pub struct WindowInfo {
     pub minimized: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitorInfo {
     /// Zero-based position in the system's monitor enumeration.
     pub index: usize,

@@ -2,3 +2,4 @@
 //! and cropping. `geometry`, `state` and `worker` hold every rule and name no window type.
 
 pub mod geometry;
+pub mod state;
