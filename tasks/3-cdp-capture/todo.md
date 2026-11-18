@@ -125,7 +125,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `tests/layers.rs`, `tests/desktop.rs`, `tests/record.rs`, `tests/control.rs`, `tests/tabs.rs`
   - Scope: M
 
-- [ ] **Task 7: CI workflow**
+- [x] **Task 7: CI workflow**
   - Description: The workflow in Contracts, without the browser step.
   - Steps:
     - `.github/workflows/ci.yml`: steps 1 to 5 of Contracts.

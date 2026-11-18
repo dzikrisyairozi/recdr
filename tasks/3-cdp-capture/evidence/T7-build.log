@@ -1,0 +1,3 @@
+> npx --yes yaml@2.8.1 --json < .github/workflows/ci.yml
+[{"name":"ci","on":{"pull_request":null,"push":{"branches":["main"]}},"jobs":{"test":{"strategy":{"fail-fast":false,"matrix":{"os":["windows-latest","ubuntu-latest","macos-latest"]}},"runs-on":"${{ matrix.os }}","steps":[{"uses":"actions/checkout@v4"},{"name":"Rust 1.98","run":"rustup toolchain install 1.98 --profile minimal --component rustfmt --component clippy\nrustup default 1.98\n"},{"run":"cargo fmt --check"},{"run":"cargo clippy --all-targets -- -D warnings"},{"run":"cargo test"}]}}}]
+exit code: 0
