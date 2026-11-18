@@ -41,6 +41,8 @@ enum Command {
     Export(ExportCmd),
     /// Run the MCP server on stdio
     Mcp,
+    /// Open the recorder window
+    Gui(GuiCmd),
     /// The background recorder that `start` spawns
     #[command(name = "_recorder", hide = true)]
     Recorder { dir: PathBuf },
@@ -198,6 +200,13 @@ struct ExportCmd {
     out: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct GuiCmd {
+    /// Output root [default: .recdr]
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
 impl ExportCmd {
     fn into_request(self) -> ExportRequest {
         ExportRequest {
@@ -236,7 +245,8 @@ impl RecordFlags {
 }
 
 /// Parses the command line, runs the command and prints its JSON. Returns the exit code.
-pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
+/// The MCP server and the app are passed in, so front ends do not import each other.
+pub fn run(serve_mcp: fn() -> Result<()>, open_gui: fn(PathBuf) -> Result<()>) -> i32 {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
@@ -287,6 +297,9 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
         ),
         Command::Export(cmd) => text(cmd.into_request().into_options().and_then(control::export)),
         Command::Mcp => serve_mcp().map(|()| None),
+        Command::Gui(cmd) => request::resolve_out(cmd.out)
+            .and_then(open_gui)
+            .map(|()| None),
     };
     match outcome {
         Ok(Some(text)) => {

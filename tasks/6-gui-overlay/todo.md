@@ -167,7 +167,7 @@ cargo test
   - Files: `src/gui/mod.rs`, `src/gui/state.rs`, `src/request.rs`, `src/model.rs`
   - Scope: M
 
-- [ ] **Task 8: the worker, and `recdr gui` as a command that is refused everywhere**
+- [x] **Task 8: the worker, and `recdr gui` as a command that is refused everywhere**
   - Description: The last piece that needs no window. After it `recdr gui` exists and answers `unsupported_platform` on every system; Task 10 makes it open the app on Windows and macOS.
   - Steps:
     - `src/gui/mod.rs`: `pub mod worker;`, and `run` returning `Err(Error::UnsupportedPlatform)`.
