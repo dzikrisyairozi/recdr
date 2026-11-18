@@ -225,6 +225,7 @@ pub(crate) fn prepared(options: crate::model::RecordOptions, name: &str) -> Reco
             origin: (0, 0),
         },
         options,
+        error: None,
     })
     .unwrap();
     dir

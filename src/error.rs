@@ -1,10 +1,13 @@
 use serde_json::json;
 
-use crate::model::WindowInfo;
+use crate::model::{ErrorInfo, WindowInfo};
 
 /// Every failure a user can see. The variant decides the JSON error code.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// An error a detached recorder wrote to its state file, reported by `start` as it was.
+    #[error("{}", .0.message)]
+    Relayed(ErrorInfo),
     #[error("{0}")]
     Usage(String),
     #[error("no visible window or monitor matches {0}")]
@@ -43,8 +46,9 @@ pub enum Error {
 impl Error {
     /// Stable identifier printed in the JSON error object. Agents match on this,
     /// so renaming one is a breaking change.
-    pub fn code(&self) -> &'static str {
+    pub fn code(&self) -> &str {
         match self {
+            Error::Relayed(info) => &info.code,
             Error::Usage(_) => "usage",
             Error::TargetNotFound(_) => "target_not_found",
             Error::AmbiguousTarget { .. } => "ambiguous_target",
@@ -69,12 +73,25 @@ impl Error {
         }
     }
 
-    pub fn to_json(&self) -> serde_json::Value {
-        let mut error = json!({ "code": self.code(), "message": self.to_string() });
-        if let Error::AmbiguousTarget { candidates, .. } = self {
-            error["candidates"] = json!(candidates);
+    /// The error as it is printed: code, message, and candidates for `ambiguous_target`.
+    pub fn info(&self) -> ErrorInfo {
+        match self {
+            Error::Relayed(info) => info.clone(),
+            _ => ErrorInfo {
+                code: self.code().to_owned(),
+                message: self.to_string(),
+                candidates: match self {
+                    Error::AmbiguousTarget { candidates, .. } => {
+                        Some(candidates.iter().map(|c| json!(c)).collect())
+                    }
+                    _ => None,
+                },
+            },
         }
-        json!({ "error": error })
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({ "error": self.info() })
     }
 }
 
@@ -121,8 +138,29 @@ mod tests {
     }
 
     #[test]
+    fn relayed_error_prints_as_it_was_stored() {
+        let info = ErrorInfo {
+            code: "ambiguous_target".into(),
+            message: "2 windows match \"t\"; pass --window-id".into(),
+            candidates: Some(vec![json!({"id": 1}), json!({"id": 2})]),
+        };
+        let error = Error::Relayed(info.clone());
+        assert_eq!(error.to_json(), json!({ "error": info }));
+        assert_eq!(error.code(), "ambiguous_target");
+        assert_eq!(error.exit_code(), 1);
+    }
+
+    #[test]
     fn every_variant_has_the_code_from_the_spec() {
         let all = [
+            (
+                Error::Relayed(ErrorInfo {
+                    code: "capture_failed".into(),
+                    message: String::new(),
+                    candidates: None,
+                }),
+                "capture_failed",
+            ),
             (Error::Usage(String::new()), "usage"),
             (Error::TargetNotFound(String::new()), "target_not_found"),
             (
@@ -153,7 +191,7 @@ mod tests {
             (Error::EncodeFailed(String::new()), "encode_failed"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 14);
+        assert_eq!(all.len(), 15);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };

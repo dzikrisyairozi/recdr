@@ -41,7 +41,18 @@ pub fn record(options: RecordOptions) -> Result<RecordingResult> {
         ));
     }
     let dir = prepare(options)?;
-    recorder::run(&dir)
+    run_noting_error(&dir)
+}
+
+/// Runs the recorder and, when it fails, stores the error in the state so `start`
+/// can report it and `status` calls the recording crashed.
+fn run_noting_error(dir: &RecordingDir) -> Result<RecordingResult> {
+    recorder::run(dir).inspect_err(|e| {
+        if let Ok(mut state) = dir.read_state() {
+            state.error = Some(e.info());
+            let _ = dir.write_state(&state);
+        }
+    })
 }
 
 /// Starts a recorder in its own process and returns once it has its first frame.
@@ -58,18 +69,25 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
     )?;
     let begun = Instant::now();
     loop {
+        // Checked before the state is read, so an error written just before the
+        // recorder exited is seen.
+        let alive = platform::process_alive(pid);
+        let late = begun.elapsed() >= START_TIMEOUT;
         // A read can race the recorder's rename; the next poll sees the new file.
-        if let Ok(state) = dir.read_state()
-            && matches!(state.status, Status::Recording | Status::Finished)
-        {
-            return Ok(StartInfo {
-                id: state.id,
-                dir: dir.path().to_path_buf(),
-                width: state.width,
-                height: state.height,
-            });
+        if let Ok(state) = dir.read_state() {
+            if let Some(info) = state.error {
+                return Err(Error::Relayed(info));
+            }
+            if matches!(state.status, Status::Recording | Status::Finished) {
+                return Ok(StartInfo {
+                    id: state.id,
+                    dir: dir.path().to_path_buf(),
+                    width: state.width,
+                    height: state.height,
+                });
+            }
         }
-        if !platform::process_alive(pid) || begun.elapsed() >= START_TIMEOUT {
+        if !alive || late {
             return Err(Error::RecorderStartFailed(dir.last_log_line()));
         }
         thread::sleep(POLL);
@@ -131,7 +149,7 @@ pub fn status(out: &Path, id: Option<&str>) -> Result<StatusList> {
 
 /// Body of the hidden `_recorder <dir>` command that `start` spawns.
 pub fn run_recorder(dir: PathBuf) -> Result<()> {
-    recorder::run(&RecordingDir::at(dir))
+    run_noting_error(&RecordingDir::at(dir))
         .map(|_| ())
         .inspect_err(|e| {
             // stderr is the recording's log file; `start` reports its last line.
@@ -146,6 +164,9 @@ fn derived_status(dir: &RecordingDir) -> Result<Status> {
         return Ok(Status::Finished);
     }
     let state = dir.read_state()?;
+    if state.error.is_some() {
+        return Ok(Status::Crashed);
+    }
     let young = time::now_unix_ms().saturating_sub(state.started_at_unix_ms)
         < START_TIMEOUT.as_millis() as u64;
     if (state.status == Status::Starting && young) || platform::process_alive(state.pid) {
@@ -211,6 +232,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         height: 0,
         resolved,
         options,
+        error: None,
     })?;
     Ok(dir)
 }

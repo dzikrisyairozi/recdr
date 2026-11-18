@@ -393,6 +393,7 @@ mod tests {
                 duration_ms: None,
                 command: None,
             },
+            error: None,
         }
     }
 

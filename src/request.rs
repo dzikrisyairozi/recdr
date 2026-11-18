@@ -262,8 +262,8 @@ mod tests {
             (&at[..], None, true),
             (&[][..], Some("0ms"), false),
         ] {
-            let code = parse_selection(at, every, keyframes).unwrap_err().code();
-            assert_eq!(code, "usage");
+            let error = parse_selection(at, every, keyframes).unwrap_err();
+            assert_eq!(error.code(), "usage");
         }
     }
 }

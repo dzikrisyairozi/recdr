@@ -93,19 +93,55 @@ fn start_returns_quickly_and_stop_ends_the_recorder() {
     assert_eq!(ok(&run("moving", &out, &["stop", id])), result);
 }
 
+/// The id of the only recording directory under `out`.
+fn only_recording(out: &Path) -> String {
+    let ids: Vec<String> = std::fs::read_dir(out)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    ids[0].clone()
+}
+
 #[test]
-fn broken_source_fails_to_start_with_its_reason() {
+fn broken_source_fails_to_start_with_its_own_code() {
     let out = out_dir("start-broken");
-    let (code, error) = error(&run("broken", &out, &["start", "--monitor", "0"]));
+    let started = run("broken", &out, &["start", "--monitor", "0"]);
+    let (code, error) = error(&started);
     assert_eq!(
         (code, error["code"].as_str()),
-        (Some(1), Some("recorder_start_failed"))
+        (Some(1), Some("capture_failed"))
     );
     let message = error["message"].as_str().unwrap();
     assert!(
         message.contains("the synthetic source is broken"),
         "{message}"
     );
+
+    let recorded = run(
+        "broken",
+        &out_dir("record-broken-compare"),
+        &["record", "--monitor", "0", "--duration", "1s"],
+    );
+    assert_eq!(json(&started.stderr), json(&recorded.stderr));
+
+    let begun = Instant::now();
+    assert_eq!(status_of(&out, &only_recording(&out)), "crashed");
+    assert!(begun.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn failed_record_is_crashed_at_once() {
+    let out = out_dir("record-broken");
+    let (code, _) = error(&run(
+        "broken",
+        &out,
+        &["record", "--monitor", "0", "--duration", "1s"],
+    ));
+    assert_eq!(code, Some(1));
+    assert_eq!(status_of(&out, &only_recording(&out)), "crashed");
 }
 
 #[test]

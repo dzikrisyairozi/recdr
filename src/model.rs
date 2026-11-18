@@ -152,6 +152,17 @@ pub struct State {
     pub height: u32,
     pub resolved: ResolvedTarget,
     pub options: RecordOptions,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error: Option<ErrorInfo>,
+}
+
+/// An error in the shape it is printed, so a detached recorder can hand it to `start`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ErrorInfo {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub candidates: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

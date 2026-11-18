@@ -16,7 +16,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 1: changes to the first module, on Windows
 
-- [ ] **Task 1: `start` reports the recorder's own error**
+- [x] **Task 1: `start` reports the recorder's own error**
   - Description: A detached recorder that fails writes its error into `state.json`, and `start` prints that error in place of `recorder_start_failed`.
   - Steps:
     - `src/model.rs`: `ErrorInfo`, and `State.error`.
