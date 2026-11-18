@@ -10,8 +10,9 @@ use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions, RecordingResult,
-    StartInfo, State, Status, StatusEntry, StatusList, Target, WindowList,
+    Endpoint, Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions,
+    RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList, Target,
+    WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -30,6 +31,13 @@ pub fn list_windows() -> Result<WindowList> {
 pub fn list_monitors() -> Result<MonitorList> {
     Ok(MonitorList {
         monitors: capture::list_monitors()?,
+    })
+}
+
+/// The tabs of a browser reached through CDP.
+pub fn list_tabs(endpoint: &Endpoint) -> Result<TabList> {
+    Ok(TabList {
+        tabs: capture::list_tabs(endpoint)?,
     })
 }
 

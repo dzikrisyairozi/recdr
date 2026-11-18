@@ -23,6 +23,8 @@ enum Command {
     Windows,
     /// List monitors
     Monitors,
+    /// List the tabs of a browser
+    Tabs(TabsCmd),
     /// Record for a fixed time or while a command runs, then print the result
     Record(RecordCmd),
     /// Start recording in the background and print its id
@@ -105,6 +107,13 @@ struct RecordCmd {
 struct StartCmd {
     #[command(flatten)]
     flags: RecordFlags,
+}
+
+#[derive(Args)]
+struct TabsCmd {
+    /// Browser to attach to: a port, an http:// or ws:// URL, or chrome
+    #[arg(long)]
+    cdp: String,
 }
 
 #[derive(Args)]
@@ -192,6 +201,9 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
     let outcome: Result<Option<String>> = match cli.command {
         Command::Windows => text(control::list_windows()),
         Command::Monitors => text(control::list_monitors()),
+        Command::Tabs(cmd) => text(
+            request::parse_endpoint(&cmd.cdp).and_then(|endpoint| control::list_tabs(&endpoint)),
+        ),
         Command::Record(cmd) => {
             let request = RecordRequest {
                 duration: cmd.duration,

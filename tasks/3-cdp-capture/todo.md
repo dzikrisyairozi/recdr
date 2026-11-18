@@ -163,7 +163,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `Cargo.toml`, `Cargo.lock`, `src/model.rs`, `src/error.rs`, `src/capture/cdp.rs`, `src/capture/mod.rs`
   - Scope: M
 
-- [ ] **Task 9: the `tabs` command and the browser test harness**
+- [x] **Task 9: the `tabs` command and the browser test harness**
   - Description: `recdr tabs --cdp <endpoint>` end to end, and the helpers every later browser test uses.
   - Steps:
     - `src/request.rs`: `parse_endpoint` with a unit test for each of the six rules.
