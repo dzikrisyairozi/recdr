@@ -6,7 +6,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
-use crate::model::{Endpoint, FakeKind, Format, FrameSelection, RecordOptions, Rect, Target};
+use crate::model::{
+    Endpoint, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery, TabTarget, Target,
+};
 use crate::time::parse_time;
 
 pub const DEFAULT_FPS: u32 = 15;
@@ -26,6 +28,12 @@ pub struct RecordRequest {
     pub process: Option<String>,
     pub region: Option<String>,
     pub monitor: Option<usize>,
+    /// A port, an http:// or ws:// URL, or "chrome"; goes with tab_id or tab.
+    pub cdp: Option<String>,
+    /// Tab id from list_tabs.
+    pub tab_id: Option<String>,
+    /// Tab whose title or URL contains this text, ignoring case.
+    pub tab: Option<String>,
     pub fps: Option<u32>,
     pub max_duration: Option<String>,
     pub max_size: Option<String>,
@@ -41,6 +49,7 @@ pub struct RecordRequest {
 
 impl RecordRequest {
     pub fn into_options(self) -> Result<RecordOptions> {
+        let cdp = self.cdp.as_deref().map(parse_endpoint).transpose()?;
         let mut targets = Vec::new();
         if let Some(id) = self.window_id {
             targets.push(Target::WindowId(id));
@@ -57,12 +66,24 @@ impl RecordRequest {
         if let Some(index) = self.monitor {
             targets.push(Target::Monitor(index));
         }
-        if targets.len() != 1 {
+        let mut queries = Vec::new();
+        if let Some(id) = self.tab_id {
+            queries.push(TabQuery::Id(id));
+        }
+        if let Some(text) = self.tab {
+            queries.push(TabQuery::Text(text));
+        }
+        if targets.len() + queries.len() != 1 {
             return Err(usage(
-                "give exactly one of --window-id, --window, --process, --region, --monitor",
+                "give exactly one of --window-id, --window, --process, --region, --monitor, --tab-id, --tab",
             ));
         }
-        let mut target = targets.remove(0);
+        let mut target = match (queries.pop(), cdp) {
+            (Some(query), Some(cdp)) => Target::Tab(TabTarget { cdp, query }),
+            (Some(_), None) => return Err(usage("--tab-id and --tab need --cdp")),
+            (None, Some(_)) => return Err(usage("--cdp goes with --tab-id or --tab")),
+            (None, None) => targets.remove(0),
+        };
         if let Ok(value) = std::env::var(FAKE_SOURCE_ENV) {
             target = Target::Fake(fake_kind(&value)?);
         }
@@ -254,6 +275,60 @@ mod tests {
         let error = parse_endpoint(text).unwrap_err();
         assert_eq!(error.code(), "usage", "{text}");
         error.to_string()
+    }
+
+    fn target_of(request: RecordRequest) -> Result<Target> {
+        RecordRequest {
+            duration: Some("1s".into()),
+            ..request
+        }
+        .into_options()
+        .map(|options| options.target)
+    }
+
+    #[test]
+    fn tab_flags_need_cdp_and_only_with_each_other() {
+        let message = |request| target_of(request).unwrap_err().to_string();
+        assert_eq!(
+            message(RecordRequest {
+                tab: Some("x".into()),
+                ..Default::default()
+            }),
+            "--tab-id and --tab need --cdp"
+        );
+        assert_eq!(
+            message(RecordRequest {
+                cdp: Some("9222".into()),
+                monitor: Some(0),
+                ..Default::default()
+            }),
+            "--cdp goes with --tab-id or --tab"
+        );
+        assert_eq!(
+            message(RecordRequest {
+                cdp: Some("1".into()),
+                tab_id: Some("a".into()),
+                tab: Some("b".into()),
+                ..Default::default()
+            }),
+            "give exactly one of --window-id, --window, --process, --region, --monitor, --tab-id, --tab"
+        );
+    }
+
+    #[test]
+    fn tab_flag_with_cdp_is_a_tab_target() {
+        let target = target_of(RecordRequest {
+            cdp: Some("9222".into()),
+            tab_id: Some("AB".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            target.unwrap(),
+            Target::Tab(TabTarget {
+                cdp: Endpoint::Port(9222),
+                query: TabQuery::Id("AB".into()),
+            })
+        );
     }
 
     #[test]

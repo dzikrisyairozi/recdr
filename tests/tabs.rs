@@ -74,6 +74,77 @@ fn tabs_chrome_without_remote_debugging_says_how_to_switch_it_on() {
     );
 }
 
+#[test]
+fn tab_flag_mistakes_are_usage_errors() {
+    for args in [
+        &["record", "--tab", "x", "--duration", "1s"][..],
+        &[
+            "record",
+            "--cdp",
+            "9222",
+            "--monitor",
+            "0",
+            "--duration",
+            "1s",
+        ],
+        &[
+            "record",
+            "--cdp",
+            "wss://example.test",
+            "--tab-id",
+            "x",
+            "--duration",
+            "1s",
+        ],
+        &[
+            "record",
+            "--cdp",
+            "1",
+            "--tab-id",
+            "a",
+            "--tab",
+            "b",
+            "--duration",
+            "1s",
+        ],
+    ] {
+        let out = out_dir("tab-usage");
+        let output = recdr().args(args).arg("--out").arg(&out).output().unwrap();
+        let (code, error) = error(&output);
+        assert_eq!(
+            (code, error["code"].as_str()),
+            (Some(2), Some("usage")),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn record_and_start_on_a_closed_port_fail_to_connect() {
+    let port = closed_port();
+    for args in [
+        &[
+            "record",
+            "--cdp",
+            &port,
+            "--tab-id",
+            "x",
+            "--duration",
+            "1s",
+        ][..],
+        &["start", "--cdp", &port, "--tab-id", "x"],
+    ] {
+        let out = out_dir("tab-closed-port");
+        let output = recdr().args(args).arg("--out").arg(&out).output().unwrap();
+        let (code, error) = error(&output);
+        assert_eq!(
+            (code, error["code"].as_str()),
+            (Some(1), Some("cdp_connect_failed")),
+            "{args:?}"
+        );
+    }
+}
+
 #[cfg(not(windows))]
 mod unsupported {
     use super::{json, recdr};

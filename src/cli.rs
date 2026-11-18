@@ -62,6 +62,15 @@ struct TargetFlags {
     /// Monitor index from `recdr monitors`, starting at 0
     #[arg(long)]
     monitor: Option<usize>,
+    /// Browser to attach to: a port, an http:// or ws:// URL, or chrome
+    #[arg(long)]
+    cdp: Option<String>,
+    /// Tab id from `recdr tabs`
+    #[arg(long)]
+    tab_id: Option<String>,
+    /// Tab whose title or URL contains this text, ignoring case
+    #[arg(long)]
+    tab: Option<String>,
 }
 
 #[derive(Args)]
@@ -174,6 +183,9 @@ impl RecordFlags {
             process: self.target.process,
             region: self.target.region,
             monitor: self.target.monitor,
+            cdp: self.target.cdp,
+            tab_id: self.target.tab_id,
+            tab: self.target.tab,
             fps: self.fps,
             max_duration: self.max_duration,
             max_size: self.max_size,

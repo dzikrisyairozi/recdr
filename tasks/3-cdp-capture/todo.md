@@ -219,7 +219,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/model.rs`, `src/capture/cdp.rs`, `src/capture/mod.rs`, `src/capture/windows.rs`, `src/recorder.rs`, `src/control.rs`
   - Scope: M
 
-- [ ] **Task 12: `--cdp`, `--tab-id` and `--tab` on `record` and `start`**
+- [x] **Task 12: `--cdp`, `--tab-id` and `--tab` on `record` and `start`**
   - Description: The flags, and the first real tab recordings.
   - Steps:
     - `src/request.rs`: the three fields and the target rules of Contracts, with unit tests for the three usage messages.

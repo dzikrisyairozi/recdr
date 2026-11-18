@@ -4,14 +4,71 @@
 
 mod common;
 
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use common::{json, recdr};
+use common::{json, out_dir, recdr};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket};
+
+/// White page with a red 200x200 box at top 400 px whose left edge moves 4 px per
+/// animation frame.
+const ANIMATION: &str = "<!doctype html><title>moving box</title>\
+<style>body{margin:0;background:#fff}#b{position:absolute;top:400px;left:0;\
+width:200px;height:200px;background:#f00}</style><div id=b></div>\
+<script>let x=0;const b=document.getElementById('b');\
+function f(){x=(x+4)%1000;b.style.left=x+'px';requestAnimationFrame(f)}\
+requestAnimationFrame(f)</script>";
+const STILL: &str = "<!doctype html><title>quiet page</title>\
+<style>body{margin:0;background:#fff}</style><h1>A page that does not change</h1>";
+const GREEN: &str = "<!doctype html><title>green</title>\
+<style>html,body{margin:0;height:100%;background:#00aa00}</style>";
+
+/// Serves the three test pages on 127.0.0.1, by path, and returns the port.
+fn serve() -> u16 {
+    static PORT: OnceLock<u16> = OnceLock::new();
+    *PORT.get_or_init(|| {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || answer(stream));
+            }
+        });
+        port
+    })
+}
+
+fn answer(mut stream: TcpStream) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut request = String::new();
+    if reader.read_line(&mut request).is_err() {
+        return;
+    }
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+            break;
+        }
+    }
+    let path = request.split_whitespace().nth(1).unwrap_or_default();
+    let (status, body) = match path {
+        "/anim" => ("200 OK", ANIMATION),
+        "/still" => ("200 OK", STILL),
+        "/green" => ("200 OK", GREEN),
+        _ => ("404 Not Found", ""),
+    };
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
 
 fn chrome_path() -> PathBuf {
     if let Some(path) = std::env::var_os("RECDR_TEST_CHROME") {
@@ -136,6 +193,37 @@ impl Client {
         }
     }
 
+    /// Attaches to a tab and returns the session id for later calls.
+    fn attach(&mut self, tab: &str) -> String {
+        let result = self.call(
+            "Target.attachToTarget",
+            json!({ "targetId": tab, "flatten": true }),
+            None,
+        );
+        result["sessionId"].as_str().unwrap().to_owned()
+    }
+
+    /// The value of a JavaScript expression in the tab.
+    fn eval(&mut self, session: &str, expression: &str) -> Value {
+        let result = self.call(
+            "Runtime.evaluate",
+            json!({ "expression": expression, "returnByValue": true }),
+            Some(session),
+        );
+        result["result"]["value"].clone()
+    }
+
+    /// Opens `url` in the tab and waits until it has loaded.
+    fn navigate(&mut self, session: &str, url: &str) {
+        self.call("Page.navigate", json!({ "url": url }), Some(session));
+        let loaded = format!("document.readyState == 'complete' && location.href == '{url}'");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.eval(session, &loaded) != json!(true) {
+            assert!(Instant::now() < deadline, "{url} did not load");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     /// Ids of the page targets, in the browser's order.
     fn tab_ids(&mut self) -> Vec<String> {
         let result = self.call("Target.getTargets", json!({}), None);
@@ -210,4 +298,208 @@ fn tabs_through_each_endpoint_form() {
         got.sort();
         assert_eq!(got, expected, "{cdp}");
     }
+}
+
+/// The first tab of a fresh browser, showing `page`, with a client attached to it.
+fn tab_showing(browser: &Browser, page: &str) -> (Client, String, String) {
+    let mut client = browser.client();
+    let tab = client.tab_ids().remove(0);
+    let session = client.attach(&tab);
+    client.navigate(&session, &format!("http://127.0.0.1:{}{page}", serve()));
+    (client, tab, session)
+}
+
+/// Runs `recdr <args> --cdp <port> --out <out>`.
+fn run(browser: &Browser, out: &Path, args: &[&str]) -> Output {
+    recdr()
+        .args(args)
+        .args(["--cdp", &browser.port.to_string()])
+        .arg("--out")
+        .arg(out)
+        .output()
+        .unwrap()
+}
+
+fn ok(output: &Output) -> Value {
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    json(&output.stdout)
+}
+
+fn error_code(output: &Output) -> String {
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    json(&output.stderr)["error"]["code"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Sum of the GIF's frame delays, in hundredths of a second.
+fn gif_length(path: &str) -> u32 {
+    let mut options = gif::DecodeOptions::new();
+    options.set_color_output(gif::ColorOutput::Indexed);
+    let mut decoder = options
+        .read_info(std::fs::File::open(path).unwrap())
+        .unwrap();
+    let mut total = 0;
+    while let Some(frame) = decoder.read_next_frame().unwrap() {
+        total += u32::from(frame.delay);
+    }
+    total
+}
+
+/// Success criterion 2.
+#[test]
+#[ignore]
+fn records_a_tab_at_its_viewport_size() {
+    for (name, extra) in [
+        ("viewport-1", &[][..]),
+        ("viewport-2", &["--force-device-scale-factor=2"][..]),
+    ] {
+        let browser = Browser::start(name, extra);
+        let (mut client, tab, session) = tab_showing(&browser, "/anim");
+        let width = client.eval(&session, "innerWidth * devicePixelRatio");
+        let height = client.eval(&session, "innerHeight * devicePixelRatio");
+        let result = ok(&run(
+            &browser,
+            &out_dir(name),
+            &["record", "--tab-id", &tab, "--duration", "3s"],
+        ));
+        assert_eq!(result["width"].as_f64(), width.as_f64(), "{name}");
+        assert_eq!(result["height"].as_f64(), height.as_f64(), "{name}");
+        let length = gif_length(result["gif"].as_str().unwrap());
+        assert!((250..=350).contains(&length), "{name}: {length}");
+    }
+}
+
+/// Success criterion 3.
+#[test]
+#[ignore]
+fn still_page_stores_one_or_two_frames() {
+    let browser = Browser::start("still", &[]);
+    let (_client, tab, _) = tab_showing(&browser, "/still");
+    let result = ok(&run(
+        &browser,
+        &out_dir("still"),
+        &["record", "--tab-id", &tab, "--duration", "3s"],
+    ));
+    let stored = result["frames_stored"].as_u64().unwrap();
+    assert!((1..=2).contains(&stored), "{stored}");
+    assert!(Path::new(result["contact_sheet"].as_str().unwrap()).is_file());
+}
+
+/// Success criterion 4.
+#[test]
+#[ignore]
+fn animation_keeps_fifteen_frames_per_second() {
+    let browser = Browser::start("fifteen", &[]);
+    let (_client, tab, _) = tab_showing(&browser, "/anim");
+    let result = ok(&run(
+        &browser,
+        &out_dir("fifteen"),
+        &[
+            "record",
+            "--tab-id",
+            &tab,
+            "--duration",
+            "10s",
+            "--fps",
+            "15",
+        ],
+    ));
+    let stored = result["frames_stored"].as_u64().unwrap();
+    assert!(stored >= 100, "{stored}");
+    assert_eq!(result["dropped_frames"], 0);
+}
+
+/// Success criterion 5.
+#[test]
+#[ignore]
+fn tab_text_matches_title_and_url() {
+    let browser = Browser::start("tab-text", &[]);
+    let (mut client, anim, _) = tab_showing(&browser, "/anim");
+    let created = client.call(
+        "Target.createTarget",
+        json!({ "url": format!("http://127.0.0.1:{}/still", serve()) }),
+        None,
+    );
+    let still = created["targetId"].as_str().unwrap().to_owned();
+    let session = client.attach(&still);
+    client.navigate(&session, &format!("http://127.0.0.1:{}/still", serve()));
+    let out = out_dir("tab-text");
+
+    // "BOX" is only in the title of the first tab and "/STI" only in the URL of the
+    // second, so each records exactly one tab or fails.
+    for text in ["BOX", "/STI"] {
+        ok(&run(
+            &browser,
+            &out,
+            &["record", "--tab", text, "--duration", "1s"],
+        ));
+    }
+
+    let both = run(
+        &browser,
+        &out,
+        &["record", "--tab", "127.0.0.1", "--duration", "1s"],
+    );
+    assert_eq!(error_code(&both), "ambiguous_target");
+    let candidates = json(&both.stderr)["error"]["candidates"].clone();
+    let mut ids: Vec<&str> = candidates
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            let mut keys: Vec<&String> = c.as_object().unwrap().keys().collect();
+            keys.sort();
+            assert_eq!(keys, ["id", "title", "url"]);
+            c["id"].as_str().unwrap()
+        })
+        .collect();
+    ids.sort();
+    let mut expected = [anim.as_str(), still.as_str()];
+    expected.sort();
+    assert_eq!(ids, expected);
+
+    for (flag, value, code) in [
+        ("--tab", "127.0.0.1", "ambiguous_target"),
+        ("--tab", "no-such-tab", "target_not_found"),
+        ("--tab-id", "NOPE", "target_not_found"),
+    ] {
+        let recorded = run(&browser, &out, &["record", flag, value, "--duration", "1s"]);
+        let started = run(&browser, &out, &["start", flag, value]);
+        assert_eq!(error_code(&recorded), code, "record {flag} {value}");
+        assert_eq!(error_code(&started), code, "start {flag} {value}");
+    }
+}
+
+/// Success criterion 12.
+#[test]
+#[ignore]
+fn start_mark_stop_frames_on_a_tab() {
+    let browser = Browser::start("start-stop", &[]);
+    let (_client, tab, _) = tab_showing(&browser, "/anim");
+    let out = out_dir("tab-start-stop");
+    let begun = Instant::now();
+    let started = ok(&run(&browser, &out, &["start", "--tab-id", &tab]));
+    assert!(
+        begun.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        begun.elapsed()
+    );
+    let id = started["id"].as_str().unwrap();
+    let local = |args: &[&str]| recdr().args(args).arg("--out").arg(&out).output().unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    ok(&local(&["mark", id, "halfway"]));
+    std::thread::sleep(Duration::from_millis(1000));
+    let result = ok(&local(&["stop", id]));
+    assert_eq!(result["stop_reason"], "stopped");
+    assert_eq!(result["marks"][0]["label"], "halfway");
+    let frames = ok(&local(&["frames", id, "--at", "1s"]));
+    let path = frames["frames"][0]["path"].as_str().unwrap();
+    assert!(Path::new(path).is_file(), "{path}");
 }
