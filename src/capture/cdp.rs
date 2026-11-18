@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -62,9 +63,14 @@ pub struct CdpSource {
     conn: Connection,
     session: String,
     interval: Duration,
-    /// Base64 PNGs received and not yet handed out, oldest first.
-    held: VecDeque<String>,
-    /// `sessionId`s of the held screencast frames, acknowledged once all are handed out.
+    /// Decoded frames not yet handed out, oldest first.
+    held: VecDeque<Frame>,
+    /// Base64 PNGs go to a decoder thread, so the recorder thread only stores frames.
+    to_decoder: Sender<String>,
+    decoded: Receiver<Result<Frame>>,
+    /// Frames sent to the decoder and not yet back.
+    decoding: usize,
+    /// `sessionId`s of frames received and not yet handed out, acknowledged once all are.
     unacked: Vec<i64>,
     release_at: Instant,
     /// Size of the latest frame handed out, for scaling clicks.
@@ -88,12 +94,27 @@ impl CdpSource {
             .as_str()
             .ok_or_else(|| Error::CaptureFailed("Target.attachToTarget gave no session".into()))?
             .to_owned();
+        let (to_decoder, jobs) = mpsc::channel::<String>();
+        let (results, decoded) = mpsc::channel();
+        // Ends when the source is dropped and `to_decoder` with it.
+        thread::Builder::new()
+            .name("png-decoder".into())
+            .spawn(move || {
+                for data in jobs {
+                    if results.send(decode(&data)).is_err() {
+                        break;
+                    }
+                }
+            })?;
         // From here a failure drops the source, and Drop undoes what was switched on.
         let mut source = CdpSource {
             conn,
             session,
             interval: Duration::from_millis(u64::from(1000 / fps)),
             held: VecDeque::new(),
+            to_decoder,
+            decoded,
+            decoding: 0,
             unacked: Vec::new(),
             release_at: Instant::now(),
             frame_size: None,
@@ -143,10 +164,11 @@ impl CdpSource {
             return Ok(None);
         }
         if method == "Page.screencastFrame" {
-            // Decoded when handed out, so a click behind a large frame is read at once.
             let data = incoming.params["data"].take();
-            self.held
-                .push_back(data.as_str().unwrap_or_default().to_owned());
+            self.to_decoder
+                .send(data.as_str().unwrap_or_default().to_owned())
+                .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
+            self.decoding += 1;
             if let Some(id) = incoming.params["sessionId"].as_i64() {
                 self.unacked.push(id);
             }
@@ -212,15 +234,21 @@ impl CaptureSource for CdpSource {
                     return Ok(Some(event));
                 }
             }
+            while let Ok(frame) = self.decoded.try_recv() {
+                self.decoding -= 1;
+                self.held.push_back(frame?);
+            }
             if let Some(click) = self.clicks.pop_front() {
                 return Ok(Some(click));
             }
-            if !self.held.is_empty() && Instant::now() >= self.release_at {
-                let frame = decode(&self.held.pop_front().unwrap_or_default())?;
+            if let Some(frame) = self.held.front()
+                && Instant::now() >= self.release_at
+            {
                 self.frame_size = Some((frame.width, frame.height));
+                let frame = self.held.pop_front().expect("a held frame");
                 // Every frame received has now been handed out. Acking all of them
                 // matters: the browser stops sending while three frames are unacked.
-                if self.held.is_empty() {
+                if self.held.is_empty() && self.decoding == 0 {
                     for id in std::mem::take(&mut self.unacked) {
                         self.conn.send(
                             "Page.screencastFrameAck",

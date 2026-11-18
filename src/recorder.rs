@@ -59,6 +59,9 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
 
     let mut writer = dir.frame_writer(first.width, first.height)?;
     writer.push(first, 0)?;
+    // Later frames are stored on the writer's own thread, so this loop keeps reading
+    // its source, timing clicks and checking for the end while a frame is encoded.
+    let mut writer = writer.into_thread()?;
 
     let mut child = match &options.command {
         Some(command) => Some(platform::spawn_command(command)?),
@@ -117,7 +120,8 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         }
     };
 
-    let dropped_frames = source.dropped();
+    let (frames, skipped) = writer.finish()?;
+    let dropped_frames = source.dropped() + skipped;
     drop(source);
     if let Some(mut child) = child
         && stop_reason != StopReason::CommandExited
@@ -142,7 +146,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         fps: options.fps,
         started_at_unix_ms: state.started_at_unix_ms,
         duration_ms,
-        frames: writer.finish(),
+        frames,
         marks,
         clicks,
         stop_reason,

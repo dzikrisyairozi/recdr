@@ -318,6 +318,6 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 ### Checkpoint E: complete (needs a push)
 
 - [ ] Stop and ask the owner to push; CI is green on all three runners, browser tests included (criteria 17 and 20)
-- [ ] `tests/layers.rs` runs six rules (criterion 21)
+- [x] `tests/layers.rs` runs six rules (criterion 21)
 - [ ] The owner checks criteria 14 and 15 by hand with the commands in `acceptance.md`
 - [ ] Ready for `/review`
