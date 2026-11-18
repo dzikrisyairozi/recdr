@@ -86,7 +86,7 @@ struct RecordFlags {
     /// The recording stops itself at this directory size [default: 2GB]
     #[arg(long)]
     max_size: Option<String>,
-    /// gif, mp4, or gif,mp4 [default: gif]
+    /// gif, mp4, gif,mp4 or none [default: gif]
     #[arg(long)]
     format: Option<String>,
     /// Leave the mouse cursor out of the frames

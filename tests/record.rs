@@ -117,6 +117,44 @@ fn usage_errors() {
 }
 
 #[test]
+fn format_none_writes_no_gif() {
+    let (output, _) = record(
+        "moving",
+        "format-none",
+        &["--monitor", "0", "--duration", "2s", "--format", "none"],
+    );
+    let result = ok(&output);
+    assert!(result.get("gif").is_none(), "{result}");
+    assert!(result.get("mp4").is_none(), "{result}");
+    let dir = std::path::Path::new(result["dir"].as_str().unwrap());
+    assert!(dir.join("manifest.json").is_file());
+    assert!(dir.join("contact_sheet.png").is_file());
+    assert!(std::fs::read_dir(dir.join("frames")).unwrap().count() > 0);
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!name.ends_with(".gif"), "{name}");
+    }
+}
+
+#[test]
+fn format_none_with_gif_is_usage_and_records_nothing() {
+    let (output, out) = record(
+        "moving",
+        "format-none-gif",
+        &["--monitor", "0", "--duration", "2s", "--format", "none,gif"],
+    );
+    assert_eq!(error_code(&output), (Some(2), "usage".into()));
+    let dirs = std::fs::read_dir(&out)
+        .map(|entries| {
+            entries
+                .filter(|e| e.as_ref().unwrap().path().is_dir())
+                .count()
+        })
+        .unwrap_or(0);
+    assert_eq!(dirs, 0);
+}
+
+#[test]
 fn unknown_fake_source_is_usage() {
     let (output, _) = record(
         "nonsense",

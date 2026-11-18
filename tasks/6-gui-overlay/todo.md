@@ -29,7 +29,7 @@ cargo test
 
 ## Phase 1: export, on every system
 
-- [ ] **Task 1: `--format none`**
+- [x] **Task 1: `--format none`**
   - Description: A recording with stored frames, a manifest and a contact sheet, and no GIF or MP4.
   - Steps:
     - `src/request.rs`: `parse_formats` as in Contracts, with unit tests; the doc comment on `RecordRequest.format`.

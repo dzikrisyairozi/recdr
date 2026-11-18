@@ -37,6 +37,7 @@ pub struct RecordRequest {
     pub fps: Option<u32>,
     pub max_duration: Option<String>,
     pub max_size: Option<String>,
+    /// gif, mp4, "gif,mp4" or none; default gif
     pub format: Option<String>,
     pub no_cursor: bool,
     pub no_click_highlight: bool,
@@ -176,14 +177,19 @@ pub fn parse_region(text: &str) -> Result<Rect> {
     Ok(rect)
 }
 
-/// `gif`, `mp4` or both, comma separated. A repeated format counts once.
+/// `gif`, `mp4` or both, comma separated, or `none` alone. A repeated format counts once.
 pub fn parse_formats(text: &str) -> Result<Vec<Format>> {
+    let parts: Vec<&str> = text.split(',').map(str::trim).collect();
+    if parts == ["none"] {
+        return Ok(Vec::new());
+    }
     let mut formats = Vec::new();
-    for part in text.split(',').map(str::trim) {
+    for part in parts {
         let format = match part {
             "gif" => Format::Gif,
             "mp4" => Format::Mp4,
-            other => return Err(Error::Usage(format!("{other:?} is not gif or mp4"))),
+            "none" => return Err(usage("none cannot be combined with gif or mp4")),
+            other => return Err(Error::Usage(format!("{other:?} is not gif, mp4 or none"))),
         };
         if !formats.contains(&format) {
             formats.push(format);
@@ -428,7 +434,19 @@ mod tests {
             [Format::Gif, Format::Mp4]
         );
         assert_eq!(parse_formats("gif,gif").unwrap(), [Format::Gif]);
-        assert_eq!(parse_formats("webm").unwrap_err().code(), "usage");
+        let webm = parse_formats("webm").unwrap_err();
+        assert_eq!(webm.code(), "usage");
+        assert!(webm.to_string().contains("none"), "{webm}");
+    }
+
+    #[test]
+    fn parse_formats_none_alone_is_no_format() {
+        assert_eq!(parse_formats("none").unwrap(), []);
+        for text in ["none,gif", "gif,none", "mp4,none"] {
+            let error = parse_formats(text).unwrap_err();
+            assert_eq!(error.code(), "usage", "{text}");
+            assert_eq!(error.to_string(), "none cannot be combined with gif or mp4");
+        }
     }
 
     #[test]
