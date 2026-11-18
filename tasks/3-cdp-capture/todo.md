@@ -286,7 +286,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/mcp.rs`, `tests/common/mod.rs`, `tests/mcp.rs`, `tests/browser.rs`
   - Scope: S
 
-- [ ] **Task 16: browser tests in CI and the Unix wrapped command**
+- [x] **Task 16: browser tests in CI and the Unix wrapped command**
   - Description: The browser step in the workflow, and criterion 17's wrapped command.
   - Steps:
     - `.github/workflows/ci.yml`: step 6 of Contracts.

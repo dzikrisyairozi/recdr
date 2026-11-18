@@ -897,3 +897,29 @@ fn mcp_records_a_tab() {
     let result: Value = serde_json::from_str(&text(&recorded)).unwrap();
     assert_eq!(result["width"].as_f64(), width.as_f64());
 }
+
+#[cfg(windows)]
+const ECHO_THEN_WAIT: &[&str] = &["cmd", "/c", "echo hi & ping -n 3 127.0.0.1 >nul"];
+#[cfg(unix)]
+const ECHO_THEN_WAIT: &[&str] = &["sh", "-c", "echo hi; sleep 2"];
+
+/// Success criterion 17, the wrapped command.
+#[test]
+#[ignore]
+fn wraps_a_command_while_recording_a_tab() {
+    let browser = Browser::start("wrap", &[]);
+    let (_client, tab, _) = tab_showing(&browser, "/anim");
+    let port = browser.port.to_string();
+    let output = recdr()
+        .args(["record", "--cdp", &port, "--tab-id", &tab, "--out"])
+        .arg(out_dir("wrap"))
+        .arg("--")
+        .args(ECHO_THEN_WAIT)
+        .output()
+        .unwrap();
+    let result = ok(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(result["stop_reason"], "command_exited", "{stderr}");
+    assert_eq!(result["command_exit_code"], 0, "{stderr}");
+    assert!(stderr.contains("hi"), "{stderr}");
+}

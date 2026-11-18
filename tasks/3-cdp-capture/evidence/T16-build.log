@@ -1,0 +1,22 @@
+﻿> cargo fmt --check
+exit code: 0
+
+> cargo clippy --all-targets -- -D warnings
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
+exit code: 0
+
+> cargo build
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.30s
+exit code: 0
+
+> cargo clippy --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
+exit code: 0
+
+> cargo check --all-targets --target aarch64-apple-darwin
+    Checking recdr v0.1.0 (D:\recdr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.84s
+exit code: 0
+
