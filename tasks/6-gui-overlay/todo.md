@@ -184,8 +184,10 @@ cargo test
   - Scope: S
 
 ### Checkpoint B: the logic is done (needs a pull request)
-- [ ] The owner pushes the branch and opens a draft pull request. The build stops and asks.
+- [x] The owner pushes the branch and opens a draft pull request. The build stops and asks.
+  - #11, draft, base `feat/5-native-mp4`, pushed on the owner's go-ahead.
 - [ ] The three CI jobs are green (criterion 10).
+  - Run 44379181138: macOS and Linux green in every step. Windows passes `cargo fmt`, `clippy` and `cargo test`, then fails in the browser step on `animation_keeps_fifteen_frames_per_second` (`tests/browser.rs:191`, cdp-capture), the same failure as on #8 and #9. Left open until that test is fixed.
 
 ## Phase 3: the windows part, on Windows
 
