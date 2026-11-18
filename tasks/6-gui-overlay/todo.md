@@ -44,7 +44,8 @@ cargo test
   - Files: `src/request.rs`, `src/cli.rs`, `tests/record.rs`
   - Scope: S
 
-- [ ] **Task 2: the encoders take a crop and a path**
+- [x] **Task 2: the encoders take a crop and a path**
+  - Found while building: with nine MP4 unit tests encoding at once, Media Foundation on the RTX 3060 failed now and then with 0xC00D6D60. The tests that encode now take turns through a lock in the test module; one thread at a time passed six runs out of six.
   - Description: The two changes to `encode` the spec names. Recording behaves as before.
   - Steps:
     - `src/encode/mod.rs`: `render`, `video_frames`, `write` and `mp4` as in Contracts.

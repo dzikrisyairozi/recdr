@@ -21,29 +21,32 @@ use mf::Writer;
 #[path = "../../tests/common/mp4.rs"]
 mod mp4;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use image::RgbaImage;
 
 use crate::draw;
 use crate::error::{Error, Result};
-use crate::model::{FrameEntry, Manifest};
+use crate::model::{FrameEntry, Manifest, Rect};
 use crate::store::RecordingDir;
 
-/// Writes `recording.mp4` (H.264) with the encoder this system uses.
-pub fn mp4(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
+/// Writes an H.264 MP4 to `path` with the encoder this system uses, each picture cut to
+/// `crop` when there is one. Returns the number of video frames.
+pub fn mp4(
+    dir: &RecordingDir,
+    manifest: &Manifest,
+    crop: Option<&Rect>,
+    path: &Path,
+) -> Result<u64> {
     if manifest.width == 0 || manifest.height == 0 {
         return Err(Error::EncodeFailed("the recording has no picture".into()));
     }
-    let path = dir.mp4_path();
-    if let Err(error) = write(dir, manifest, &path) {
+    write(dir, manifest, crop, path).inspect_err(|_| {
         // A directory in the way is not ours to remove.
         if path.is_file() {
-            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(path);
         }
-        return Err(error);
-    }
-    Ok(path)
+    })
 }
 
 /// Fails when an MP4 cannot be written on this machine, before anything is recorded.
@@ -87,14 +90,14 @@ fn bit_rate(width: u32, height: u32, fps: u32) -> u32 {
 }
 
 /// Writes one video file through this system's writer.
-fn write(dir: &RecordingDir, manifest: &Manifest, path: &Path) -> Result<()> {
+fn write(dir: &RecordingDir, manifest: &Manifest, crop: Option<&Rect>, path: &Path) -> Result<u64> {
     let (width, height) = video_size(manifest.width, manifest.height);
     let fps = manifest.fps.max(1);
     let mut writer = Writer::create(path, width, height, fps, bit_rate(width, height, fps))?;
-    let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));
+    let pushed = video_frames(dir, manifest, crop, |k, image| writer.push(k, image));
     // Always finished, so the encoder lets go of the file before `mp4` removes it.
     let finished = writer.finish();
-    pushed.and(finished)
+    pushed.and_then(|count| finished.map(|()| count))
 }
 
 /// How long a click ring stays on screen.
@@ -149,10 +152,21 @@ pub fn timeline(manifest: &Manifest) -> Vec<OutFrame> {
     out
 }
 
-/// The image shown for one piece of the timeline: the stored frame plus its click
-/// rings. Stored frames on disk stay clean.
-pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
+/// The image shown for one piece of the timeline: the stored frame, cut to `crop` when
+/// there is one, plus its click rings. Stored frames on disk stay clean. The caller has
+/// checked that the crop lies inside the picture.
+pub fn render(dir: &RecordingDir, frame: &OutFrame, crop: Option<&Rect>) -> Result<RgbaImage> {
     let mut image = dir.load_frame(&frame.entry)?;
+    if let Some(crop) = crop {
+        image = image::imageops::crop_imm(
+            &image,
+            crop.x as u32,
+            crop.y as u32,
+            crop.width,
+            crop.height,
+        )
+        .to_image();
+    }
     for &(x, y) in &frame.rings {
         draw::ring(&mut image, x, y, 14);
     }
@@ -165,6 +179,7 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
 fn video_frames(
     dir: &RecordingDir,
     manifest: &Manifest,
+    crop: Option<&Rect>,
     mut each: impl FnMut(u64, &RgbaImage) -> Result<()>,
 ) -> Result<u64> {
     let pieces = timeline(manifest);
@@ -178,7 +193,7 @@ fn video_frames(
         let t_ms = k * 1000 / fps;
         let at = pieces.iter().rposition(|p| p.t_ms <= t_ms).unwrap_or(0);
         if shown.as_ref().is_none_or(|(i, _)| *i != at) {
-            shown = Some((at, padded(render(dir, &pieces[at])?)));
+            shown = Some((at, padded(render(dir, &pieces[at], crop)?)));
         }
         each(k, &shown.as_ref().expect("set above").1)?;
     }
@@ -306,7 +321,7 @@ mod tests {
 
     fn calls(dir: &RecordingDir, manifest: &Manifest) -> Vec<u64> {
         let mut seen = Vec::new();
-        let count = video_frames(dir, manifest, |k, _| {
+        let count = video_frames(dir, manifest, None, |k, _| {
             seen.push(k);
             Ok(())
         })
@@ -345,7 +360,7 @@ mod tests {
         assert_eq!(manifest.frames.len(), 2);
 
         let mut shades = Vec::new();
-        video_frames(&dir, &manifest, |_, image| {
+        video_frames(&dir, &manifest, None, |_, image| {
             shades.push(image.get_pixel(0, 0)[0]);
             Ok(())
         })
@@ -383,13 +398,22 @@ mod tests {
 
     #[test]
     fn a_small_recording_makes_a_video() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
         }
         let (dir, manifest) = one_frame("small", Vec::new());
-        let facts = super::mp4::facts(&mp4(&dir, &manifest).unwrap());
+        mp4(&dir, &manifest, None, &dir.mp4_path()).unwrap();
+        let facts = super::mp4::facts(&dir.mp4_path());
         assert_eq!((facts.width, facts.height), (160, 120));
+    }
+
+    /// Cargo runs tests in parallel, and with nine encoders open at once Media Foundation
+    /// on an RTX 3060 sometimes failed with 0xC00D6D60, so the tests that encode take turns.
+    fn one_encoder() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// True where ffmpeg is the encoder.
@@ -414,34 +438,48 @@ mod tests {
     fn no_picture_fails_before_the_encoder() {
         let (dir, mut manifest) = one_frame("no-picture", Vec::new());
         manifest.width = 0;
-        assert_eq!(mp4(&dir, &manifest).unwrap_err().code(), "encode_failed");
+        assert_eq!(
+            mp4(&dir, &manifest, None, &dir.mp4_path())
+                .unwrap_err()
+                .code(),
+            "encode_failed"
+        );
     }
 
     #[test]
     fn odd_size_is_padded() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
         }
         let (dir, manifest) = recording("odd", black(321, 241), 1000, 10, Vec::new());
-        let facts = super::mp4::facts(&mp4(&dir, &manifest).unwrap());
+        mp4(&dir, &manifest, None, &dir.mp4_path()).unwrap();
+        let facts = super::mp4::facts(&dir.mp4_path());
         assert_eq!((facts.width, facts.height), (322, 242));
     }
 
     #[test]
     fn a_directory_in_the_way_is_left_alone() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
         }
         let (dir, manifest) = one_frame("dir-in-the-way", Vec::new());
         std::fs::create_dir(dir.mp4_path()).unwrap();
-        assert_eq!(mp4(&dir, &manifest).unwrap_err().code(), "encode_failed");
+        assert_eq!(
+            mp4(&dir, &manifest, None, &dir.mp4_path())
+                .unwrap_err()
+                .code(),
+            "encode_failed"
+        );
         assert!(dir.mp4_path().is_dir());
     }
 
     #[test]
     fn a_failed_encode_leaves_no_file() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
@@ -452,7 +490,7 @@ mod tests {
             t_ms: 500,
             file: "frames/missing.png".into(),
         });
-        assert!(mp4(&dir, &manifest).is_err());
+        assert!(mp4(&dir, &manifest, None, &dir.mp4_path()).is_err());
         assert!(!dir.mp4_path().exists());
     }
 
@@ -494,6 +532,7 @@ mod tests {
 
     #[test]
     fn first_video_frame_has_the_picture_and_the_ring() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
@@ -505,7 +544,8 @@ mod tests {
             button: "left".into(),
         };
         let (dir, manifest) = recording("pixels", quarters(320, 240), 1000, 10, vec![click]);
-        let Some(frame) = first_frame(&mp4(&dir, &manifest).unwrap()) else {
+        mp4(&dir, &manifest, None, &dir.mp4_path()).unwrap();
+        let Some(frame) = first_frame(&dir.mp4_path()) else {
             return;
         };
         let at = |x, y| frame.get_pixel(x, y).0;
@@ -527,6 +567,7 @@ mod tests {
 
     #[test]
     fn check_mp4_leaves_no_file() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG {
             return;
         }
@@ -543,6 +584,7 @@ mod tests {
 
     #[test]
     fn finish_with_no_frame_returns() {
+        let _turn = one_encoder();
         if NEEDS_FFMPEG && !ffmpeg_runs() {
             println!("skipped: ffmpeg not on PATH");
             return;
@@ -551,7 +593,7 @@ mod tests {
         manifest.frames[0].file = "frames/missing.png".into();
         let (done, result) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = done.send(mp4(&dir, &manifest).map(|_| ()));
+            let _ = done.send(mp4(&dir, &manifest, None, &dir.mp4_path()).map(|_| ()));
         });
         let result = result
             .recv_timeout(std::time::Duration::from_secs(10))
@@ -562,9 +604,10 @@ mod tests {
     #[test]
     #[ignore = "criterion 12, run by hand with --release"]
     fn encodes_90_large_frames_in_time() {
+        let _turn = one_encoder();
         let (dir, manifest) = recording("large", quarters(1920, 1080), 6000, 15, Vec::new());
         let begun = std::time::Instant::now();
-        mp4(&dir, &manifest).unwrap();
+        mp4(&dir, &manifest, None, &dir.mp4_path()).unwrap();
         let took = begun.elapsed();
         println!("criterion 12: {:.1} s", took.as_secs_f64());
         assert!(took < std::time::Duration::from_secs(10), "{took:?}");
@@ -582,7 +625,8 @@ mod tests {
         };
         let dir = RecordingDir::open(Path::new(&out), &id).unwrap();
         let manifest = dir.read_manifest().unwrap();
-        let path = mp4(&dir, &manifest).unwrap();
+        let path = dir.mp4_path();
+        mp4(&dir, &manifest, None, &path).unwrap();
         let bytes = std::fs::metadata(&path).unwrap().len();
         println!("{} is {bytes} bytes", path.display());
     }
@@ -599,9 +643,51 @@ mod tests {
             rings: vec![(32, 24)],
         };
         assert_ne!(
-            render(&dir, &piece).unwrap(),
+            render(&dir, &piece, None).unwrap(),
             dir.load_frame(&entry).unwrap()
         );
         assert_eq!(std::fs::read(dir.frame_path(&entry)).unwrap(), before);
+    }
+
+    #[test]
+    fn render_cuts_the_crop_out() {
+        let crop = Rect {
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 16,
+        };
+        let (dir, manifest) = one_frame("render-crop", Vec::new());
+        let piece = |manifest: &Manifest| OutFrame {
+            entry: manifest.frames[0].clone(),
+            t_ms: 0,
+            duration_ms: 100,
+            rings: Vec::new(),
+        };
+        let image = render(&dir, &piece(&manifest), Some(&crop)).unwrap();
+        assert_eq!(image.dimensions(), (30, 16));
+
+        let mut dot = black(64, 48);
+        dot.put_pixel(10, 20, image::Rgba([255, 255, 255, 255]));
+        let (dir, manifest) = recording("crop", dot, 1000, 15, Vec::new());
+        let image = render(&dir, &piece(&manifest), Some(&crop)).unwrap();
+        assert_eq!(image.get_pixel(0, 0).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn mp4_writes_to_the_path_it_is_given() {
+        let _turn = one_encoder();
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, manifest) = one_frame("mp4-path", Vec::new());
+        let path =
+            std::env::temp_dir().join(format!("recdr-unit-{}-elsewhere.mp4", std::process::id()));
+        let count = mp4(&dir, &manifest, None, &path).unwrap();
+        assert_eq!(count, 15);
+        assert!(path.is_file());
+        assert!(!dir.mp4_path().exists());
+        let _ = std::fs::remove_file(&path);
     }
 }
