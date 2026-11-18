@@ -176,7 +176,7 @@ impl CdpSource {
             });
         }
         // Acks sent while a navigation is pending can be held until it ends or, across
-        // processes, lost; with two frames unacked the browser sends no more, so a page
+        // processes, lost; with three frames unacked the browser sends no more, so a page
         // that paints once would never arrive. Once the new page has loaded, starting
         // again resets the count and sends the page as it is.
         if method == "Page.loadEventFired" {
@@ -219,7 +219,7 @@ impl CaptureSource for CdpSource {
                 let frame = decode(&self.held.pop_front().unwrap_or_default())?;
                 self.frame_size = Some((frame.width, frame.height));
                 // Every frame received has now been handed out. Acking all of them
-                // matters: the browser stops sending while two frames are unacked.
+                // matters: the browser stops sending while three frames are unacked.
                 if self.held.is_empty() {
                     for id in std::mem::take(&mut self.unacked) {
                         self.conn.send(

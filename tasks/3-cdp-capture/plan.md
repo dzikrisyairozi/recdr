@@ -389,7 +389,7 @@ State of a `CdpSource`: the connection, the session id, `interval` (`1000 / fps`
 
 1. Handle every message already waiting: take from `backlog`, or `poll` until `Idle`. `Closed` returns `CaptureEvent::Closed`. (Task 14: reading first gives a click its time on arrival. Read after the due frames, a click at scale 2 was 253 ms late.)
 1a. A queued click is returned next.
-2. When `held` is not empty and `release_at` has passed: pop the front frame; when `held` is now empty, `send` `Page.screencastFrameAck {sessionId: id}` for every id in `unacked` and clear it; set `release_at` to now plus `interval`; return the frame. (Task 13 found that acking only the oldest leaks one ack per burst of two frames, and the browser stops at two unacked.)
+2. When `held` is not empty and `release_at` has passed: pop the front frame; when `held` is now empty, `send` `Page.screencastFrameAck {sessionId: id}` for every id in `unacked` and clear it; set `release_at` to now plus `interval`; return the frame. (Task 13 found that acking only the oldest leaks one ack per burst of two frames, and the browser stops at three unacked.)
 3. Return `Ok(None)` when `timeout` has passed; otherwise sleep `IDLE_SLEEP` and loop.
 4. A message is handled by its `method`. A message whose `session_id` is not the tab's session is ignored, except `Target.detachedFromTarget`, which the browser sends outside the session and which names the session in its `params`.
 

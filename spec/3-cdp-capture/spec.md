@@ -142,7 +142,7 @@ The command the user ran checks only the flags. Everything that touches the brow
 5. It starts a screencast in PNG format, and stores each frame as the first spec describes.
 6. When the recording ends, for any reason, it stops the screencast, turns focus emulation off and removes what it added for clicks.
 
-Frame rate: the browser stops sending frames while three are unacknowledged (measured fact 13). recdr hands the recorder at most one frame per 1/n seconds, where n is `--fps`. For each frame it hands over it acknowledges one frame, the oldest that is unacknowledged, and only when no other frame is waiting to be handed over. The browser therefore sends at most n frames per second, recdr discards none, and a frame reaches the recorder about 50 ms after the browser sent it (measured fact 14). For a tab recording `dropped_frames` is always 0; a recorder that cannot keep up shows as a lower frame rate.
+Frame rate: the browser stops sending frames while three are unacknowledged (measured fact 13). recdr hands the recorder at most one frame per 1/n seconds, where n is `--fps`. When it has handed over every frame it received, it acknowledges all of them; it acknowledges nothing while a frame is still waiting. The browser therefore sends at most n frames per second, recdr discards none, and a frame reaches the recorder about 50 ms after the browser sent it (measured fact 14). For a tab recording `dropped_frames` is always 0; a recorder that cannot keep up shows as a lower frame rate.
 
 The recording's size is the size of the first frame, which is the tab's viewport in device pixels (measured fact 3). When the viewport changes size during a recording, later frames are scaled and padded as the first spec describes for a resized window.
 
@@ -198,7 +198,7 @@ This is the whole list. Adding to either table is a change to this spec.
 |---|---|
 | `Page.screencastFrame` | A frame |
 | `Page.frameNavigated` for the main frame | Add the click binding again |
-| `Page.loadEventFired` | Restart the screencast. Acks sent while a navigation is pending can be held or lost, and the browser sends no frames while two are unacked, so a page that paints once after a navigation would never arrive |
+| `Page.loadEventFired` | Restart the screencast. Acks sent while a navigation is pending can be held or lost, and the browser sends no frames while three are unacked (measured fact 13), so a page that paints once after a navigation would never arrive |
 | `Runtime.bindingCalled` | A click report |
 | `Target.detachedFromTarget` for the recorded tab | The tab is gone: stop with `tab_closed` |
 | The WebSocket closing | The browser is gone: stop with `tab_closed` |

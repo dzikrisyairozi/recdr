@@ -299,7 +299,7 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
   - Files: `.github/workflows/ci.yml`, `tests/browser.rs`
   - Scope: S
 
-- [ ] **Task 17: README and the acceptance run**
+- [x] **Task 17: README and the acceptance run**
   - Description: Documentation, and one pass over the 21 criteria.
   - Steps:
     - `README.md`, existing text that this module makes untrue: the opening line and the requirements line that say Windows only (desktop targets need Windows 10 or later; tab targets run on Windows, Linux and macOS); the two places that write `recdr.exe` where the path is not Windows-specific; the `<target>` table, which gets `--tab-id` and `--tab` with `--cdp`, and its sentence about when a target is resolved (a tab is found when the recorder connects); and the `--no-click-highlight` sentence "No mouse hook is installed", which gains "and nothing is added to the page".
