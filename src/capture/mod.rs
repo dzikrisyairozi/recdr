@@ -29,6 +29,31 @@ pub trait CaptureSource {
     }
 }
 
+/// A mouse press as the system reports it: wall-clock milliseconds, x and y in the
+/// system's screen units (pixels on Windows, points on macOS), button.
+pub type Press = (u64, f64, f64, &'static str);
+
+/// A press to a click event relative to the captured area in pixels, or None when it
+/// is outside. `origin` is the area's top-left corner in the press's units, `size` is
+/// the area in pixels, and `scale` is pixels per unit.
+pub fn to_event(
+    press: Press,
+    origin: (f64, f64),
+    size: (u32, u32),
+    scale: f64,
+) -> Option<CaptureEvent> {
+    let (unix_ms, x, y, button) = press;
+    let x = ((x - origin.0) * scale).floor();
+    let y = ((y - origin.1) * scale).floor();
+    let inside = (0.0..f64::from(size.0)).contains(&x) && (0.0..f64::from(size.1)).contains(&y);
+    inside.then_some(CaptureEvent::Click {
+        unix_ms,
+        x: x as i32,
+        y: y as i32,
+        button,
+    })
+}
+
 /// `clicks` asks the source to report presses; the synthetic source ignores it.
 pub fn open(
     resolved: &ResolvedTarget,
@@ -367,6 +392,40 @@ mod tests {
     fn region_crossing_monitors_is_out_of_bounds() {
         let err = resolve_with(Target::Region(rect(1800, 0, 400, 400))).unwrap_err();
         assert_eq!(err.code(), "region_out_of_bounds");
+    }
+
+    fn click_at(event: Option<CaptureEvent>) -> Option<(i32, i32)> {
+        match event {
+            Some(CaptureEvent::Click {
+                unix_ms,
+                x,
+                y,
+                button,
+            }) => {
+                assert_eq!((unix_ms, button), (7, "left"));
+                Some((x, y))
+            }
+            None => None,
+            Some(other) => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn to_event_keeps_presses_inside_the_area_at_scale_1() {
+        let at = |x: f64, y: f64| to_event((7, x, y, "left"), (100.0, 200.0), (50, 50), 1.0);
+        assert_eq!(click_at(at(110.0, 220.0)), Some((10, 20)));
+        assert_eq!(click_at(at(100.0, 200.0)), Some((0, 0)));
+        assert_eq!(click_at(at(149.0, 249.0)), Some((49, 49)));
+        for (x, y) in [(99.0, 220.0), (150.0, 220.0), (110.0, 250.0)] {
+            assert_eq!(click_at(at(x, y)), None, "({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn to_event_scales_points_to_pixels() {
+        let at = |x: f64, y: f64| to_event((7, x, y, "left"), (100.0, 200.0), (100, 100), 2.0);
+        assert_eq!(click_at(at(110.5, 220.0)), Some((21, 40)));
+        assert_eq!(click_at(at(150.0, 220.0)), None);
     }
 
     #[test]

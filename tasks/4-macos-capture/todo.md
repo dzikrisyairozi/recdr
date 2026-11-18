@@ -29,7 +29,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 1: shared code, on any machine
 
-- [ ] **Task 1: the click filter moves to `capture/mod.rs`**
+- [x] **Task 1: the click filter moves to `capture/mod.rs`**
   - Description: One filter for both desktop sources. Windows passes a scale factor of 1 and behaves as before.
   - Steps:
     - `src/capture/mod.rs`: `Press` and `to_event`, with the unit test that was in `src/capture/windows.rs`, rewritten for the new arguments, and two new cases at scale 2.
