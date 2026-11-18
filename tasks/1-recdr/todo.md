@@ -329,7 +329,7 @@ Each task adds the `pub mod` line in `src/lib.rs` (or in the parent `mod.rs`) fo
   - Files: `Cargo.toml`, `Cargo.lock`, `src/lib.rs`, `src/request.rs`, `src/mcp.rs`, `src/main.rs`, `tests/cli.rs`, `tests/mcp.rs`
   - Scope: M
 
-- [ ] **Task 16: README and the acceptance run**
+- [x] **Task 16: README and the acceptance run**
   - Description: Document the tool and check all 17 success criteria on the real desktop.
   - Steps:
     - `README.md`: what recdr is; build with `cargo build --release`; the commands and options from the spec; the MCP registration line; the limits from the spec's Risks table (yellow border on Windows 10, no clicks from elevated windows, protected content is black, recordings may hold secrets and are never uploaded).

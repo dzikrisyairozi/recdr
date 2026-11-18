@@ -34,3 +34,9 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
 ] }
+
+# Dependencies (PNG and GIF encoding) are optimised in debug builds too; unoptimised
+# PNG encoding drops most frames of a 1080p recording, so tests and `cargo run`
+# would not behave like the release binary.
+[profile.dev.package."*"]
+opt-level = 3
