@@ -73,7 +73,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Scope: S
 
 ### Checkpoint A: Windows is unchanged (needs a pull request)
-- [ ] The three commands, the desktop tests and the browser tests pass on Windows.
+- [x] The three commands, the desktop tests and the browser tests pass on Windows. (`evidence/checkpoint-A-test.log`: `criterion_15_dropped_frames` failed once in a 73 s run, then passed on the unchanged tree with 12 stored and 0 dropped; it also passed at Task 1. Browser tests: `evidence/T3-test.log`.)
 - [ ] By hand, by the owner: a click during `recdr record --monitor 0 --duration 5s` on Windows is in `manifest.json` and is a ring in the GIF (criterion 19).
 - [ ] The owner pushes the branch and opens a draft pull request; the build stops and asks, and asks whether it may push after each later task (plan decision 13). The three CI jobs are green.
 
