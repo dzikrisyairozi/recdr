@@ -115,7 +115,7 @@ cargo test
   - Files: `src/encode/mf.rs`, `src/encode/mod.rs`, `tests/layers.rs`, `tests/record.rs`, `tasks/5-native-mp4/acceptance.md`
   - Scope: M
 
-- [ ] **Task 6: CI installs ffmpeg where it is needed**
+- [x] **Task 6: CI installs ffmpeg where it is needed**
   - Description: Linux gets its encoder in CI, and macOS gets a decoder for the pixel check.
   - Steps:
     - `.github/workflows/ci.yml`: the two install steps of Contracts, before the `cargo test` step.

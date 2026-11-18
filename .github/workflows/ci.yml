@@ -20,6 +20,12 @@ jobs:
           rustup default 1.98
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      # ffmpeg is the MP4 encoder on Linux. On macOS it only decodes a frame for the
+      # pixel check; Windows needs neither.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - if: runner.os == 'macOS'
+        run: brew install ffmpeg
       # One test at a time: the recording tests measure frame rates, and the macOS
       # runner's three cores cannot keep sixteen parallel recorders at 15 fps.
       - run: cargo test -- --test-threads=1
