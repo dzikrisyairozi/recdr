@@ -54,7 +54,7 @@ cargo test
   - Files: `src/encode/mod.rs`, `src/encode/ffmpeg.rs`
   - Scope: S
 
-- [ ] **Task 3: `encode::mp4`, `encode::check_mp4` and the ffmpeg writer**
+- [x] **Task 3: `encode::mp4`, `encode::check_mp4` and the ffmpeg writer**
   - Description: The shape the system encoders will plug into, with ffmpeg as the only writer.
   - Steps:
     - `src/encode/ffmpeg.rs`: `Writer` with `create`, `push`, `finish`; `available` becomes `pub(super)`; `encode` and its test are removed.

@@ -1,14 +1,66 @@
 //! Turns stored frames into output files.
 
-pub mod ffmpeg;
 pub mod gif;
+
+mod ffmpeg;
+
+use ffmpeg::Writer;
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../tests/common/mp4.rs"]
+mod mp4;
+
+use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 
 use crate::draw;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::model::{FrameEntry, Manifest};
 use crate::store::RecordingDir;
+
+/// Writes `recording.mp4` (H.264) with the encoder this system uses.
+pub fn mp4(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
+    if manifest.width == 0 || manifest.height == 0 {
+        return Err(Error::EncodeFailed("the recording has no picture".into()));
+    }
+    let path = dir.mp4_path();
+    if let Err(error) = write(dir, manifest, &path) {
+        // A directory in the way is not ours to remove.
+        if path.is_file() {
+            let _ = std::fs::remove_file(&path);
+        }
+        return Err(error);
+    }
+    Ok(path)
+}
+
+/// Fails when an MP4 cannot be written on this machine, before anything is recorded.
+pub fn check_mp4() -> Result<()> {
+    if ffmpeg::available() {
+        Ok(())
+    } else {
+        Err(Error::FfmpegNotFound)
+    }
+}
+
+/// Bits per second asked of a system encoder.
+fn bit_rate(width: u32, height: u32, fps: u32) -> u32 {
+    (u64::from(width) * u64::from(height) * u64::from(fps) / 8).clamp(1_000_000, 20_000_000) as u32
+}
+
+/// Writes one video file through this system's writer.
+fn write(dir: &RecordingDir, manifest: &Manifest, path: &Path) -> Result<()> {
+    let width = manifest.width + manifest.width % 2;
+    let height = manifest.height + manifest.height % 2;
+    let fps = manifest.fps.max(1);
+    let mut writer = Writer::create(path, width, height, fps, bit_rate(width, height, fps))?;
+    let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));
+    // Always finished, so the encoder lets go of the file before `mp4` removes it.
+    let finished = writer.finish();
+    pushed.and(finished)
+}
 
 /// How long a click ring stays on screen.
 pub const RING_MS: u64 = 400;
@@ -75,7 +127,7 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
 /// Calls `each` once per video frame, in order, with the frame's number and its picture.
 /// Frame `k` is the picture on screen at `k * 1000 / fps` ms, padded to an even size.
 /// Returns the number of frames.
-pub(crate) fn video_frames(
+fn video_frames(
     dir: &RecordingDir,
     manifest: &Manifest,
     mut each: impl FnMut(u64, &RgbaImage) -> Result<()>,
@@ -99,7 +151,7 @@ pub(crate) fn video_frames(
 }
 
 /// The picture with one black column or row added where the width or height is odd.
-pub(crate) fn even(image: RgbaImage) -> RgbaImage {
+fn even(image: RgbaImage) -> RgbaImage {
     let (width, height) = image.dimensions();
     if width % 2 == 0 && height % 2 == 0 {
         return image;
@@ -274,6 +326,70 @@ mod tests {
 
         let already = RgbaImage::from_pixel(320, 240, image::Rgba([9, 8, 7, 255]));
         assert_eq!(even(already.clone()), already);
+    }
+
+    /// True where ffmpeg is the encoder.
+    const NEEDS_FFMPEG: bool = true;
+
+    /// True when `ffmpeg -version` runs and exits 0.
+    fn ffmpeg_runs() -> bool {
+        std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+
+    #[test]
+    fn bit_rate_is_clamped() {
+        assert_eq!(bit_rate(1920, 1080, 15), 3_888_000);
+        assert_eq!(bit_rate(320, 240, 15), 1_000_000);
+        assert_eq!(bit_rate(3840, 2160, 60), 20_000_000);
+    }
+
+    #[test]
+    fn no_picture_fails_before_the_encoder() {
+        let (dir, mut manifest) = one_frame("no-picture", Vec::new());
+        manifest.width = 0;
+        assert_eq!(mp4(&dir, &manifest).unwrap_err().code(), "encode_failed");
+    }
+
+    #[test]
+    fn odd_size_is_padded() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, manifest) = recording("odd", black(321, 241), 1000, 10, Vec::new());
+        let facts = super::mp4::facts(&mp4(&dir, &manifest).unwrap());
+        assert_eq!((facts.width, facts.height), (322, 242));
+    }
+
+    #[test]
+    fn a_directory_in_the_way_is_left_alone() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, manifest) = one_frame("dir-in-the-way", Vec::new());
+        std::fs::create_dir(dir.mp4_path()).unwrap();
+        assert_eq!(mp4(&dir, &manifest).unwrap_err().code(), "encode_failed");
+        assert!(dir.mp4_path().is_dir());
+    }
+
+    #[test]
+    fn a_failed_encode_leaves_no_file() {
+        if NEEDS_FFMPEG && !ffmpeg_runs() {
+            println!("skipped: ffmpeg not on PATH");
+            return;
+        }
+        let (dir, mut manifest) = one_frame("failed-encode", Vec::new());
+        manifest.frames.push(FrameEntry {
+            index: 2,
+            t_ms: 500,
+            file: "frames/missing.png".into(),
+        });
+        assert!(mp4(&dir, &manifest).is_err());
+        assert!(!dir.mp4_path().exists());
     }
 
     #[test]
