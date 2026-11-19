@@ -183,7 +183,8 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 ### Checkpoint C: recdr talks to Chrome
 
 - [x] `cargo test --test browser -- --ignored` passes on Windows
-- [ ] By hand: start Chrome with `--remote-debugging-port=9222 --user-data-dir=<an empty directory>`, run `recdr tabs --cdp 9222`, and see its tabs (covered by `tabs_through_each_endpoint_form`, which runs the same command against a test Chrome; left for the owner)
+- [x] By hand: start Chrome with `--remote-debugging-port=9222 --user-data-dir=<an empty directory>`, run `recdr tabs --cdp 9222`, and see its tabs (covered by `tabs_through_each_endpoint_form`, which runs the same command against a test Chrome; left for the owner)
+  - 2026-11-19: Chrome 158, headless, with `--remote-debugging-port=9333 --user-data-dir=<empty dir>` on a file showing `ANIMATION`; `recdr tabs --cdp 9333` printed the one tab with the title `moving box` and its file URL.
 
 ## Phase 4: tab recording
 
@@ -253,7 +254,8 @@ A browser test is a test in `tests/browser.rs`, marked `#[ignore]`, run with `ca
 ### Checkpoint D: a tab records
 
 - [x] `cargo test`, `cargo test --test browser -- --ignored` and `cargo test --test desktop -- --ignored` pass on Windows
-- [ ] By hand: open the GIF from a 3 second recording of `ANIMATION` and see the box move (stored frames checked: the box moves from x 12 to x 364; GIF playback left for the owner)
+- [x] By hand: open the GIF from a 3 second recording of `ANIMATION` and see the box move (stored frames checked: the box moves from x 12 to x 364; GIF playback left for the owner)
+  - 2026-11-19: `recdr record --cdp 9333 --tab "moving box" --duration 3s` stored 43 frames, dropped 0; the GIF is 784x505, 42 frames, 3.15 s. GIF frames 0, 10, 20 and 30 show the box at about x 430, then x 1350 (scaled strip), then leaving the right edge: `evidence/acceptance-anim-gif-frames.png`.
 
 ## Phase 5: the rest
 

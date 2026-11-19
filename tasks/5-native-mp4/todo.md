@@ -131,7 +131,7 @@ cargo test
 - [x] The owner pushes the branch and opens a draft pull request. The build stops and asks.
 - [ ] The `test` job is green on the three runners. On `ubuntu-latest` the log shows the MP4 tests ran and printed no `skipped` note (criterion 7).
 - [x] Record in `acceptance.md` whether `windows-latest` has an H.264 encoder. If it has none, make the change under "If the Windows runner has no encoder" in the plan, as its own commit, and push again.
-- [ ] By hand: criterion 13 for Windows.
+- [x] By hand: criterion 13 for Windows. (2026-11-19: plays in Chrome and opens in the Windows media stack; see `acceptance.md`.)
 
 ## Phase 3: macOS
 
