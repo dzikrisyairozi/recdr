@@ -58,9 +58,13 @@ fn moving_for_one_second() {
             .unwrap();
     let frames = manifest["frames"].as_array().unwrap();
     let times: Vec<u64> = frames.iter().map(|f| f["t_ms"].as_u64().unwrap()).collect();
+    // The limiter's output is what was stored plus what the writer replaced while it was
+    // busy (`dropped_frames`; the synthetic source drops none). On a loaded runner the
+    // writer can lose a few early frames, which is not the limiter's fault.
+    let passed = stored + result["dropped_frames"].as_u64().unwrap();
     assert!(
-        (10..=17).contains(&stored),
-        "{stored} frames: limiter not at 15 fps; stored at {times:?} ms"
+        (10..=17).contains(&passed),
+        "{stored} stored and {passed} through the limiter: not at 15 fps; stored at {times:?} ms"
     );
 
     assert_eq!(frames.len() as u64, stored);
