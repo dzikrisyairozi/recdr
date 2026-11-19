@@ -41,6 +41,11 @@ Nothing was run for this plan. The spec's "What was checked" lists what was read
 
 Found on the way: the outline the system draws for the undecorated shadow covers the outermost 1 or 2 pixels of every undecorated window and draws a thin gray edge with rounded corners around each border window. egui offers no way to turn the shadow off on Windows (`want_undecorated_shadow` in egui-winit), and a system call is a change to the spec first (decision 8). The line is drawn 2 pixels away from the recorded area, inside the visible part of each border window, and the gray edges stay. For the owner to decide whether that is acceptable.
 
+**macOS, 2026-11-20** (Task 14). Apple M5, one built-in display of 1512 by 982 points at scale 2, macOS 26.6.2, Xcode command line tools only. The app itself again, not a throwaway program.
+
+8. Size and build time: the release binary is 13.6 MB (with ScreenCaptureKit's Swift bridge and AVFoundation). A clean release build of the whole crate took 81 s. The same three `eframe` features build and link with no change.
+1 to 7: not yet run. The screen was locked while the build ran, so no window of the app could be seen or checked.
+
 ## Architecture decisions
 
 Each is a choice the spec left to the plan.
