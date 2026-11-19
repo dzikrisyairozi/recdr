@@ -146,7 +146,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 3: recording
 
-- [ ] **Task 7: record a monitor and a region**
+- [x] **Task 7: record a monitor and a region**
   - Description: The ScreenCaptureKit source for the two targets that need no window.
   - Steps:
     - `src/capture/macos.rs`: `SckSource` with `open` for `ResolvedKind::Monitor` (a window target gets the "not built yet" error of Contracts), the two handlers, `next_event`, `dropped` and `Drop`. The `clicks` argument is named `_clicks` until Task 9.

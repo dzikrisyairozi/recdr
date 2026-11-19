@@ -364,6 +364,62 @@ mod on_macos {
             .collect()
     }
 
+    /// The stored frames of a recording result, decoded.
+    fn stored_frames(result: &Value) -> Vec<image::RgbaImage> {
+        let manifest = json(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap());
+        let dir = std::path::Path::new(result["dir"].as_str().unwrap());
+        manifest["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                image::open(dir.join(f["file"].as_str().unwrap()))
+                    .unwrap()
+                    .to_rgba8()
+            })
+            .collect()
+    }
+
+    #[test]
+    #[ignore]
+    fn monitor_recording_has_the_monitor_size() {
+        let monitors = ok(&recdr().arg("monitors").output().unwrap());
+        let bounds = &monitors["monitors"][0]["bounds"];
+        let result = ok(&record("monitor", &["--monitor", "0", "--duration", "2s"]));
+        assert!(result["frames_stored"].as_u64().unwrap() >= 1);
+        for frame in stored_frames(&result) {
+            assert_eq!(
+                (u64::from(frame.width()), u64::from(frame.height())),
+                (
+                    bounds["width"].as_u64().unwrap(),
+                    bounds["height"].as_u64().unwrap()
+                )
+            );
+        }
+    }
+
+    /// Criterion 5. `--no-cursor`, so the pointer resting on the window cannot be the
+    /// center pixel.
+    #[test]
+    #[ignore]
+    fn region_inside_the_green_page_is_green() {
+        let (_browser, window) = test_window("green", "green");
+        let b = &window["bounds"];
+        let x = b["x"].as_i64().unwrap() + (b["width"].as_i64().unwrap() - 400) / 2;
+        let y = b["y"].as_i64().unwrap() + (b["height"].as_i64().unwrap() - 300) / 2;
+        let region = format!("{x},{y},400,300");
+        let args = ["--region", &region, "--no-cursor", "--duration", "2s"];
+        let result = ok(&record("green", &args));
+        let frames = stored_frames(&result);
+        assert!(!frames.is_empty());
+        for frame in frames {
+            assert_eq!((frame.width(), frame.height()), (400, 300));
+            let [r, g, b, _] = frame.get_pixel(200, 150).0;
+            let (r, g, b) = (u32::from(r), u32::from(g), u32::from(b));
+            assert!(g > 2 * r && g > 2 * b, "center pixel {r},{g},{b}");
+        }
+    }
+
     #[test]
     #[ignore]
     fn monitors_have_one_primary_and_pixel_sizes() {

@@ -151,14 +151,14 @@ fn desktop_source(
 
 #[cfg(target_os = "macos")]
 fn desktop_source(
-    _resolved: &ResolvedTarget,
-    _fps: u32,
-    _cursor: bool,
-    _clicks: bool,
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
 ) -> Result<Box<dyn CaptureSource>> {
-    Err(Error::CaptureFailed(
-        "recording is not built yet on macOS".into(),
-    ))
+    Ok(Box::new(macos::SckSource::open(
+        resolved, fps, cursor, clicks,
+    )?))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
