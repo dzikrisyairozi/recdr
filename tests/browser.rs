@@ -408,24 +408,39 @@ fn still_page_stores_one_or_two_frames() {
 #[test]
 #[ignore]
 fn animation_keeps_fifteen_frames_per_second() {
-    let browser = Browser::start("fifteen", &[]);
-    let (_client, tab, _) = tab_showing(&browser, "/anim");
-    let result = ok(&run(
-        &browser,
-        &out_dir("fifteen"),
-        &[
-            "record",
-            "--tab-id",
-            &tab,
-            "--duration",
-            "10s",
-            "--fps",
-            "15",
-        ],
-    ));
-    let stored = result["frames_stored"].as_u64().unwrap();
-    assert!(stored >= 100, "{stored}");
-    assert_eq!(result["dropped_frames"], 0);
+    twice(|attempt| {
+        let name = format!("fifteen-{attempt}");
+        let browser = Browser::start(&name, &[]);
+        let (_client, tab, _) = tab_showing(&browser, "/anim");
+        let result = ok(&run(
+            &browser,
+            &out_dir(&name),
+            &[
+                "record",
+                "--tab-id",
+                &tab,
+                "--duration",
+                "10s",
+                "--fps",
+                "15",
+            ],
+        ));
+        assert_eq!(result["dropped_frames"], 0);
+        let stored = result["frames_stored"].as_u64().unwrap();
+        (stored < 100).then(|| format!("{stored} frames stored"))
+    });
+}
+
+/// Runs a check whose bar depends on the machine's speed, and runs it again once when
+/// it falls short. The Windows runner has managed 4 frames a second where this machine
+/// manages 15; a real slowdown in recdr falls short both times. `check` returns why it
+/// fell short, or None.
+fn twice(check: impl Fn(u32) -> Option<String>) {
+    let Some(first) = check(1) else { return };
+    eprintln!("attempt 1: {first}");
+    if let Some(second) = check(2) {
+        panic!("twice: {first}; then {second}");
+    }
 }
 
 /// Success criterion 5.
@@ -559,22 +574,25 @@ fn visibility(client: &mut Client, session: &str) -> Value {
 #[test]
 #[ignore]
 fn background_tab_is_recorded() {
-    let browser = Browser::start("background", &[]);
-    let (mut client, tab, session) = tab_showing(&browser, "/anim");
-    let created = client.call("Target.createTarget", json!({ "url": "about:blank" }), None);
-    let other = client.attach(created["targetId"].as_str().unwrap());
-    assert_eq!(visibility(&mut client, &session), "hidden");
+    twice(|attempt| {
+        let name = format!("background-{attempt}");
+        let browser = Browser::start(&name, &[]);
+        let (mut client, tab, session) = tab_showing(&browser, "/anim");
+        let created = client.call("Target.createTarget", json!({ "url": "about:blank" }), None);
+        let other = client.attach(created["targetId"].as_str().unwrap());
+        assert_eq!(visibility(&mut client, &session), "hidden");
 
-    let child = spawn_record(
-        &browser,
-        &out_dir("background"),
-        &["--tab-id", &tab, "--duration", "3s", "--fps", "15"],
-    );
-    assert_eq!(visibility(&mut client, &other), "visible");
-    let result = ok(&child.wait_with_output().unwrap());
-    let stored = result["frames_stored"].as_u64().unwrap();
-    assert!(stored >= 20, "{stored}");
-    assert_eq!(visibility(&mut client, &session), "hidden");
+        let child = spawn_record(
+            &browser,
+            &out_dir(&name),
+            &["--tab-id", &tab, "--duration", "3s", "--fps", "15"],
+        );
+        assert_eq!(visibility(&mut client, &other), "visible");
+        let result = ok(&child.wait_with_output().unwrap());
+        assert_eq!(visibility(&mut client, &session), "hidden");
+        let stored = result["frames_stored"].as_u64().unwrap();
+        (stored < 20).then(|| format!("{stored} frames stored"))
+    });
 }
 
 /// Success criterion 6, for a tab whose window is minimized.
