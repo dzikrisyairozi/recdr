@@ -6,6 +6,8 @@ mod fake;
 mod hook;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod tap;
 #[cfg(windows)]
 mod windows;
 

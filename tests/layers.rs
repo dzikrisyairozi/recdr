@@ -84,7 +84,7 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
 }
 
 #[test]
-fn rule_3_unsafe_only_in_five_files() {
+fn rule_3_unsafe_only_in_six_files() {
     forbid(
         &["unsafe"],
         &[
@@ -93,6 +93,7 @@ fn rule_3_unsafe_only_in_five_files() {
             "src/platform/windows.rs",
             "src/platform/unix.rs",
             "src/capture/macos.rs",
+            "src/capture/tap.rs",
         ],
     );
 }

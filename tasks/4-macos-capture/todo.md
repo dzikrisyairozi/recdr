@@ -177,7 +177,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/macos.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 9: clicks**
+- [x] **Task 9: clicks**
   - Description: The event tap, owned by the source.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: `objc2-core-foundation`.

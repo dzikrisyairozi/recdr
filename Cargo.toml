@@ -38,8 +38,8 @@ windows = { version = "0.62", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = { version = "11.1", features = ["macos_14_0"] }
-objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGDirectDisplay", "CGError", "CGGeometry", "CGWindow"] }
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["CFArray", "CFDictionary", "CFNumber", "CFString"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGDirectDisplay", "CGError", "CGEvent", "CGEventTypes", "CGGeometry", "CGWindow"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["CFArray", "CFDictionary", "CFMachPort", "CFNumber", "CFRunLoop", "CFString"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

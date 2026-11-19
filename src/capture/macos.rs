@@ -21,7 +21,8 @@ use screencapturekit::cv::CVPixelBufferLockFlags;
 use screencapturekit::prelude::*;
 use screencapturekit::stream::delegate_trait::StreamCallbacks;
 
-use super::{CaptureSource, Display, display_bounds, to_pixels, to_points};
+use super::tap::ClickTap;
+use super::{CaptureSource, Display, display_bounds, to_event, to_pixels, to_points};
 use crate::error::{Error, Result};
 use crate::model::{CaptureEvent, Frame, MonitorInfo, ResolvedKind, ResolvedTarget, WindowInfo};
 
@@ -165,14 +166,20 @@ pub struct SckSource {
     items: Receiver<Item>,
     dropped: Arc<AtomicU64>,
     window: bool,
+    tap: Option<ClickTap>,
+    /// The captured area's top-left corner in points, its size in pixels, and pixels
+    /// per point, for the click filter.
+    corner: (f64, f64),
+    size: (u32, u32),
+    scale: f64,
 }
 
 impl SckSource {
-    pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool, _clicks: bool) -> Result<Self> {
+    pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool, clicks: bool) -> Result<Self> {
         permitted()?;
         let content = content()?;
         let failed = |e: SCError| Error::CaptureFailed(e.to_string());
-        let (filter, size, source, _corner, _scale) = match &resolved.kind {
+        let (filter, size, source, corner, scale) = match &resolved.kind {
             ResolvedKind::Monitor { index, crop } => {
                 let all = cg_displays();
                 let not_found = || Error::TargetNotFound(format!("monitor {index}"));
@@ -276,12 +283,21 @@ impl SckSource {
             items,
             dropped,
             window: matches!(resolved.kind, ResolvedKind::Window(_)),
+            tap: if clicks { ClickTap::start() } else { None },
+            corner,
+            size,
+            scale,
         })
     }
 }
 
 impl CaptureSource for SckSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
+        while let Some(press) = self.tap.as_ref().and_then(ClickTap::try_next) {
+            if let Some(click) = to_event(press, self.corner, self.size, self.scale) {
+                return Ok(Some(click));
+            }
+        }
         match self.items.recv_timeout(timeout) {
             Ok(Item::Frame(frame)) => Ok(Some(CaptureEvent::Frame(frame))),
             Ok(Item::Stopped(_)) if self.window => Ok(Some(CaptureEvent::Closed)),
