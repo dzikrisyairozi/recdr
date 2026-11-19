@@ -306,6 +306,7 @@ cargo test
   - Scope: M
 
 - [ ] **Task 15: README and the acceptance run**
+  - 2026-11-19: README has export, the app, `--format none`, the MCP tool and the app's limits; the macOS full-screen limit is written as not yet known. `acceptance.md` has a line for each of the 23 criteria, Windows only for 11 to 23. Left: the macOS column (Task 14) and the owner's by-hand items.
   - Description: The README describes the app, export and `--format none`, and every criterion has a recorded result.
   - Steps:
     - `README.md`: `recdr gui`, what it records, and that it needs Windows or macOS; `recdr export` with its flags; the MCP tool `export`; `--format none`; the limits (no monitor or tab recording from the app, the frame does not follow a window, full-screen applications on macOS, the yellow border on Windows 10); that a shortcut to the app should pass `--out`.

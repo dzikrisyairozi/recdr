@@ -31,6 +31,8 @@ recdr stop   <id>                   Stop it, encode, return the result
 recdr mark   <id> "<label>"         Add a labelled marker at the current time
 recdr status [<id>]                 State of one recording, or of all in the output root
 recdr frames <id> (--at 1200ms,2s | --every 500ms | --keyframes) [--max-width 1024]
+recdr export <id> --file <out.gif|out.mp4> [--from 2s] [--until 5s] [--crop x,y,w,h]
+recdr gui                           Open the desktop app (Windows and macOS)
 recdr mcp                           Run the MCP server on stdio
 ```
 
@@ -58,7 +60,7 @@ Options for `record` and `start`:
 | `--fps <n>` | 15 | Capture rate limit, 1 to 60. |
 | `--max-duration <time>` | 5m | The recording stops itself at this length. |
 | `--max-size <size>` | 2GB | The recording stops itself when its directory reaches this size. |
-| `--format <list>` | gif | `gif`, `mp4`, or `gif,mp4`. |
+| `--format <list>` | gif | `gif`, `mp4`, `gif,mp4`, or `none` to keep only the frames and the analysis and export later. |
 | `--no-cursor` | off | Leave the mouse cursor out of the frames. A tab recording never shows the cursor. |
 | `--no-click-highlight` | off | Do not record clicks. No mouse hook is installed and nothing is added to the page. |
 
@@ -86,6 +88,29 @@ recdr start --window-id 70628
 recdr mark 20261118-143502-1a2b "clicked submit"
 recdr stop 20261118-143502-1a2b
 ```
+
+## Export part of a recording
+
+`recdr export` writes a GIF or MP4 of a finished recording, trimmed and cropped, without touching the recording's own files:
+
+```
+recdr export 20261118-143502-1a2b --file cut.gif --from 2s --until 5s --crop 0,0,640,360
+```
+
+| Flag | Meaning |
+|---|---|
+| `--file <path>` | Required. `.gif` or `.mp4`; the extension picks the format. An existing file is replaced only when the export succeeds. |
+| `--from <time>` | Start of the kept part. Default: the start. |
+| `--until <time>` | End of the kept part. Default: the end. |
+| `--crop x,y,w,h` | A rectangle in the recording's pixels, at least 2 by 2, inside the picture. |
+
+It prints `{"path", "width", "height", "duration_ms", "frames"}`; for an MP4 the size is that of the pictures in the file, after the padding described under Build. Click rings are drawn when the recording kept clicks. A recording that is still running is `recording_not_found`; bad times, a crop outside the picture or another extension are `usage`; a file that cannot be written is `encode_failed`.
+
+## The app
+
+`recdr gui` opens a frame and a toolbar on top of other windows, on Windows and macOS. Move the frame by dragging the toolbar, resize it by its edges and corners, or pick a window in the target menu to put the frame around it. Record and Stop record what is inside the frame; the frame turns red while it records. Stop opens an editor that plays the recording, trims it with the two handles on the timeline, crops it with a rectangle dragged on the picture, and saves a GIF or MP4 through `recdr export`. "New recording" goes back to the frame.
+
+The app writes recordings with `--format none` into the output root, `./.recdr` by default, so a shortcut to it should pass `--out`. Every recording it makes is an ordinary recording: `recdr status`, `frames` and `export` work on it, and `recdr stop <id>` from a terminal ends it and opens the editor.
 
 ## Record a browser tab
 
@@ -190,7 +215,7 @@ Register the server with Claude Code:
 claude mcp add recdr -- /path/to/recdr mcp
 ```
 
-Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_recording`, `record`, `mark`, `get_status` and `get_frames`. Each returns the same JSON the CLI prints. `stop_recording` and `record` also return the contact sheet as an image, and `get_frames` returns up to 8 frames as images.
+Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_recording`, `record`, `mark`, `get_status`, `get_frames` and `export`. Each returns the same JSON the CLI prints. `stop_recording` and `record` also return the contact sheet as an image, and `get_frames` returns up to 8 frames as images.
 
 ## Limits
 
@@ -201,7 +226,10 @@ Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_re
 - A recording holds whatever was on screen, including secrets. recdr never uploads anything; recordings stay in the output root.
 - Keyboard input is never recorded.
 - The MP4 path on a Windows "N" edition without the Media Feature Pack has not been tried. recdr checks for a working encoder before it records, so the expected result is `encode_failed` before anything is captured.
-- The tests check MP4 files by their headers and by decoding frames with ffmpeg. Playing them in the Windows media player, QuickTime Player, Chrome and Safari has not been checked yet.
+- The tests check MP4 files by their headers and by decoding frames with ffmpeg. A Windows MP4 plays in Chrome and opens in the Windows media stack; QuickTime Player and Safari have not been checked yet.
+- The app needs Windows or macOS; on Linux `recdr gui` fails with `unsupported_platform`. It records a region or a window, not a monitor or a tab. A frame put around a window stays where it was put when the window moves.
+- On Windows 11 each of the app's four border windows has a thin gray outline and rounded ends drawn by the system, which egui cannot switch off.
+- The app on macOS has not been run yet, so how it behaves over full-screen applications there is not known.
 
 ## License
 
