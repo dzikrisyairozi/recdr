@@ -79,7 +79,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 2: listing, on a Mac
 
-- [ ] **Task 4: try ScreenCaptureKit and the event tap, and write the results into this plan**
+- [x] **Task 4: try ScreenCaptureKit and the event tap, and write the results into this plan**
   - Description: A try-out program on the branch `spike/4-sck`, which is never merged (plan decision 12). It makes each call the two new files will make, once, on the owner's Mac, and answers the spec's "Not checked" list.
   - Steps, on `spike/4-sck`, in a cargo project in `spike/sck/` with `screencapturekit` 11.1 (feature `macos_14_0`), `objc2-core-graphics` 0.3 and `objc2-core-foundation` 0.3. Each numbered step is a subcommand of the program:
     1. `list`: print the displays and the windows; for each display and for one window, the `content_rect` and `point_pixel_scale` of its filter. Time the first `cargo build` and note it (the Swift package).
@@ -103,7 +103,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `tasks/4-macos-capture/plan.md`, `tasks/4-macos-capture/acceptance.md` (on the work branch; the program is on `spike/4-sck` only)
   - Scope: M
 
-- [ ] **Task 5: the permission check and `recdr monitors`**
+- [x] **Task 5: the permission check and `recdr monitors`**
   - Description: The first macOS code in the tree: recdr builds with ScreenCaptureKit, asks for the permission, and lists displays.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: `screencapturekit` and `objc2-core-graphics`.
@@ -123,7 +123,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `Cargo.toml`, `Cargo.lock`, `src/error.rs`, `src/capture/macos.rs`, `src/capture/mod.rs`, `tests/layers.rs`, `tests/tabs.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 6: `recdr windows` and the test window**
+- [x] **Task 6: `recdr windows` and the test window**
   - Description: Windows are listed in pixels, and the desktop tests get a window they control.
   - Steps:
     - `src/capture/macos.rs`: `listed` with a unit test, and `list_windows`.
@@ -141,12 +141,12 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Scope: M
 
 ### Checkpoint B: recdr sees the Mac's screen
-- [ ] `recdr monitors` and `recdr windows` print the Mac's displays and windows.
+- [x] `recdr monitors` and `recdr windows` print the Mac's displays and windows. (One display of 3024 by 1964 with `primary` true; 21 windows, 14 of them `minimized`. The four macOS desktop tests pass.)
 - [ ] The three CI jobs are green on the pull request.
 
 ## Phase 3: recording
 
-- [ ] **Task 7: record a monitor and a region**
+- [x] **Task 7: record a monitor and a region**
   - Description: The ScreenCaptureKit source for the two targets that need no window.
   - Steps:
     - `src/capture/macos.rs`: `SckSource` with `open` for `ResolvedKind::Monitor` (a window target gets the "not built yet" error of Contracts), the two handlers, `next_event`, `dropped` and `Drop`. The `clicks` argument is named `_clicks` until Task 9.
@@ -177,7 +177,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/macos.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 9: clicks**
+- [x] **Task 9: clicks**
   - Description: The event tap, owned by the source.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: `objc2-core-foundation`.

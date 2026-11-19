@@ -194,16 +194,33 @@ impl Writer {
         Ok(())
     }
 
-    /// Completes the file. `finishWriting` blocks until the file is closed.
+    /// Completes the file. `finishWriting` blocks until the file is closed. It runs on
+    /// a thread of its own: on the main thread (`record` encodes there) AVFoundation
+    /// prints a warning to stderr, where recdr's JSON errors go.
     pub fn finish(self) -> Result<()> {
-        // SAFETY: called once, after the last append, on the thread that appended.
-        let finished = unsafe {
+        struct Writer<'a>(&'a AVAssetWriter);
+        // SAFETY: the writer is used by one thread at a time; this thread waits below.
+        unsafe impl Send for Writer<'_> {}
+        // SAFETY: called once, after the last append; the appending thread waits.
+        unsafe {
             self.input.markAsFinished();
             self.writer
                 .endSessionAtSourceTime(CMTime::new(self.count, self.fps));
-            #[allow(deprecated)]
-            self.writer.finishWriting()
-        };
+        }
+        let writer = Writer(&self.writer);
+        let finished = std::thread::scope(|scope| {
+            scope
+                .spawn(move || {
+                    let writer = writer;
+                    // SAFETY: as above.
+                    #[allow(deprecated)]
+                    unsafe {
+                        writer.0.finishWriting()
+                    }
+                })
+                .join()
+                .unwrap_or(false)
+        });
         // SAFETY: a property read.
         if !finished || unsafe { self.writer.status() } != AVAssetWriterStatus::Completed {
             return Err(writer_error(&self.writer, "the file was not finished"));

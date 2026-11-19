@@ -81,7 +81,6 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
             "objc2_av_foundation",
             "objc2_core_video",
             "objc2_core_media",
-            "objc2_core_foundation",
         ],
         &["src/encode/avf.rs"],
     );
@@ -89,10 +88,23 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
         &["eframe", "egui", "rfd::"],
         &["src/gui/app.rs", "src/gui/overlay.rs", "src/gui/editor.rs"],
     );
+    forbid(&["screencapturekit"], &["src/capture/macos.rs"]);
+    forbid(
+        &["objc2_core_graphics"],
+        &["src/capture/macos.rs", "src/capture/tap.rs"],
+    );
+    forbid(
+        &["objc2_core_foundation"],
+        &[
+            "src/capture/macos.rs",
+            "src/capture/tap.rs",
+            "src/encode/avf.rs",
+        ],
+    );
 }
 
 #[test]
-fn rule_3_unsafe_only_in_five_files() {
+fn rule_3_unsafe_only_in_seven_files() {
     forbid(
         &["unsafe"],
         &[
@@ -101,6 +113,8 @@ fn rule_3_unsafe_only_in_five_files() {
             "src/platform/windows.rs",
             "src/platform/unix.rs",
             "src/encode/avf.rs",
+            "src/capture/macos.rs",
+            "src/capture/tap.rs",
         ],
     );
 }

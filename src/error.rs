@@ -42,11 +42,15 @@ pub enum Error {
     #[error("encoding failed: {0}")]
     EncodeFailed(String),
     #[error(
-        "window, region and monitor capture need Windows; on this system recdr records browser tabs with --cdp"
+        "window, region and monitor capture need Windows or macOS; on this system recdr records browser tabs with --cdp"
     )]
     UnsupportedPlatform,
     #[error("could not connect to the browser: {0}")]
     CdpConnectFailed(String),
+    #[error(
+        "macOS has not given this program the Screen Recording permission. Open System Settings > Privacy & Security > Screen & System Audio Recording, switch on the program that started recdr (your terminal or editor), restart that program, and run recdr again."
+    )]
+    PermissionDenied,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -72,6 +76,7 @@ impl Error {
             Error::EncodeFailed(_) => "encode_failed",
             Error::UnsupportedPlatform => "unsupported_platform",
             Error::CdpConnectFailed(_) => "cdp_connect_failed",
+            Error::PermissionDenied => "permission_denied",
             Error::Io(_) => "io_error",
         }
     }
@@ -205,9 +210,10 @@ mod tests {
             (Error::EncodeFailed(String::new()), "encode_failed"),
             (Error::UnsupportedPlatform, "unsupported_platform"),
             (Error::CdpConnectFailed(String::new()), "cdp_connect_failed"),
+            (Error::PermissionDenied, "permission_denied"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 18);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };
