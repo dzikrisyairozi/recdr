@@ -73,6 +73,8 @@ pub struct CdpSource {
     /// `sessionId`s of frames received and not yet handed out, acknowledged once all are.
     unacked: Vec<i64>,
     release_at: Instant,
+    /// Set by the recorder while its writer is behind; see `CaptureSource::hold_frames`.
+    holding: bool,
     /// Size of the latest frame handed out, for scaling clicks.
     frame_size: Option<(u32, u32)>,
     clicks: VecDeque<CaptureEvent>,
@@ -117,6 +119,7 @@ impl CdpSource {
             decoding: 0,
             unacked: Vec::new(),
             release_at: Instant::now(),
+            holding: false,
             frame_size: None,
             clicks: VecDeque::new(),
             click_script: None,
@@ -242,6 +245,7 @@ impl CaptureSource for CdpSource {
                 return Ok(Some(click));
             }
             if let Some(frame) = self.held.front()
+                && !self.holding
                 && Instant::now() >= self.release_at
             {
                 self.frame_size = Some((frame.width, frame.height));
@@ -273,6 +277,10 @@ impl CaptureSource for CdpSource {
 
     fn paced(&self) -> bool {
         true
+    }
+
+    fn hold_frames(&mut self, hold: bool) {
+        self.holding = hold;
     }
 }
 

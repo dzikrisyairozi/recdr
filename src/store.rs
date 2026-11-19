@@ -278,8 +278,6 @@ pub struct WriterThread {
 struct Shared {
     mailbox: Mutex<Mailbox>,
     ready: Condvar,
-    /// Signalled when the writer takes the waiting frame.
-    taken: Condvar,
     bytes: AtomicU64,
 }
 
@@ -305,17 +303,11 @@ impl WriterThread {
         Ok(())
     }
 
-    /// Waits up to `timeout` for the writer to take the waiting frame, and says whether
-    /// the next `push` will replace nothing. For a source that waits for recdr anyway: a
-    /// browser sends the next frame only after recdr acknowledges, so not reading from it
-    /// until this is true lowers the frame rate instead of dropping a frame.
-    pub fn wait_taken(&self, timeout: std::time::Duration) -> bool {
+    /// True when the next `push` replaces nothing. For a source that waits for recdr
+    /// anyway: a browser sends the next frame only after recdr acknowledges, so taking
+    /// no frame from it until this is true lowers the frame rate instead of dropping one.
+    pub fn is_free(&self) -> bool {
         let mailbox = self.shared.mailbox.lock().expect("frame writer lock");
-        let (mailbox, _) = self
-            .shared
-            .taken
-            .wait_timeout_while(mailbox, timeout, |mailbox| mailbox.waiting.is_some())
-            .expect("frame writer lock");
         // A writer that ended on an error never takes the frame; `push` reports it.
         mailbox.waiting.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished)
     }
@@ -369,7 +361,6 @@ fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter>
                 // The waiting frame is taken before `done` is looked at, so `finish`
                 // stores the last frame.
                 if let Some(next) = mailbox.waiting.take() {
-                    shared.taken.notify_one();
                     break Some(next);
                 }
                 if mailbox.done {
@@ -436,7 +427,6 @@ impl FrameWriter {
         let shared = Arc::new(Shared {
             mailbox: Mutex::new(Mailbox::default()),
             ready: Condvar::new(),
-            taken: Condvar::new(),
             bytes: AtomicU64::new(self.bytes),
         });
         let thread_shared = Arc::clone(&shared);
@@ -645,7 +635,9 @@ mod tests {
         first.push(solid(256, 256, [0, 0, 0, 255]), 0).unwrap();
         let mut writer = first.into_thread().unwrap();
         for i in 1..=20u8 {
-            while !writer.wait_taken(std::time::Duration::from_millis(5)) {}
+            while !writer.is_free() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
             writer
                 .push(solid(256, 256, [i, 0, 0, 255]), u64::from(i))
                 .unwrap();
