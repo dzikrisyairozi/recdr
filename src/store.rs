@@ -278,6 +278,8 @@ pub struct WriterThread {
 struct Shared {
     mailbox: Mutex<Mailbox>,
     ready: Condvar,
+    /// Signalled when the writer takes the waiting frame.
+    taken: Condvar,
     bytes: AtomicU64,
 }
 
@@ -301,6 +303,28 @@ impl WriterThread {
         }
         self.shared.ready.notify_one();
         Ok(())
+    }
+
+    /// Waits until the writer has taken the frame before this one, then hands this one
+    /// over, so nothing is skipped. For a source that waits for recdr anyway: a browser
+    /// sends the next frame only after recdr acknowledges, so waiting here lowers the
+    /// frame rate instead of dropping a frame.
+    pub fn push_waiting(&mut self, frame: Frame, t_ms: u64) -> Result<()> {
+        {
+            let mut mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+            while mailbox.waiting.is_some()
+                && !self.thread.as_ref().is_some_and(JoinHandle::is_finished)
+            {
+                // Timed, so a writer that ended on an error is noticed by `push`.
+                mailbox = self
+                    .shared
+                    .taken
+                    .wait_timeout(mailbox, std::time::Duration::from_millis(50))
+                    .expect("frame writer lock")
+                    .0;
+            }
+        }
+        self.push(frame, t_ms)
     }
 
     /// Bytes of the PNG files stored so far.
@@ -352,6 +376,7 @@ fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter>
                 // The waiting frame is taken before `done` is looked at, so `finish`
                 // stores the last frame.
                 if let Some(next) = mailbox.waiting.take() {
+                    shared.taken.notify_one();
                     break Some(next);
                 }
                 if mailbox.done {
@@ -418,6 +443,7 @@ impl FrameWriter {
         let shared = Arc::new(Shared {
             mailbox: Mutex::new(Mailbox::default()),
             ready: Condvar::new(),
+            taken: Condvar::new(),
             bytes: AtomicU64::new(self.bytes),
         });
         let thread_shared = Arc::clone(&shared);
@@ -616,6 +642,23 @@ mod tests {
         assert_eq!(frames.last().unwrap().t_ms, 20);
         // Every pushed frame differs from the one before, so each is stored or skipped.
         assert_eq!(frames.len() as u64 - 1 + skipped, 20);
+    }
+
+    #[test]
+    fn writer_thread_waits_instead_of_skipping_when_asked() {
+        let out = temp("writer-thread-wait");
+        let dir = RecordingDir::create(&out, 0).unwrap();
+        let mut first = dir.frame_writer(256, 256).unwrap();
+        first.push(solid(256, 256, [0, 0, 0, 255]), 0).unwrap();
+        let mut writer = first.into_thread().unwrap();
+        for i in 1..=20u8 {
+            writer
+                .push_waiting(solid(256, 256, [i, 0, 0, 255]), u64::from(i))
+                .unwrap();
+        }
+        let (frames, skipped) = writer.finish().unwrap();
+        assert_eq!(skipped, 0);
+        assert_eq!(frames.len(), 21);
     }
 
     #[test]
