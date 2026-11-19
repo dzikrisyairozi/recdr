@@ -77,6 +77,10 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
         &["objc2_core_graphics"],
         &["src/capture/macos.rs", "src/capture/tap.rs"],
     );
+    forbid(
+        &["objc2_core_foundation"],
+        &["src/capture/macos.rs", "src/capture/tap.rs"],
+    );
 }
 
 #[test]

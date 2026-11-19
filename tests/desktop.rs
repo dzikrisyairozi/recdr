@@ -272,7 +272,29 @@ mod on_macos {
     #[test]
     #[ignore]
     fn window_and_process_find_it_and_two_are_ambiguous() {
-        let (_one, _) = test_window("one", "anim");
+        let (_one, one) = test_window("one", "anim");
+        let found = record(
+            "one-title",
+            &["--window", &title("one"), "--duration", "1s"],
+        );
+        ok(&found);
+        let process = one["process"].as_str().unwrap();
+        let by_process = record("one-process", &["--process", process, "--duration", "1s"]);
+        if by_process.status.code() != Some(0) {
+            // The owner's own Chrome may run under the same name.
+            let (code, err) = error(&by_process);
+            assert_eq!(
+                (code, err["code"].as_str()),
+                (Some(1), Some("ambiguous_target"))
+            );
+            let ids: Vec<&Value> = err["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| &c["id"])
+                .collect();
+            assert!(ids.contains(&&one["id"]), "{err}");
+        }
         let (_a, a) = test_window("two-a", "anim");
         let (_b, b) = test_window("two-b", "anim");
         let (code, err) = error(&record(
@@ -418,6 +440,94 @@ mod on_macos {
             let (r, g, b) = (u32::from(r), u32::from(g), u32::from(b));
             assert!(g > 2 * r && g > 2 * b, "center pixel {r},{g},{b}");
         }
+    }
+
+    /// Criterion 3. The window's size from CDP, in points, times the page's
+    /// devicePixelRatio; Task 4 measured a difference of 0, so 2 pixels are allowed.
+    #[test]
+    #[ignore]
+    fn window_recording_has_the_content_size() {
+        let (browser, window) = test_window("content", "anim");
+        let mut client = browser.client();
+        let tab = client.tab_ids()[0].clone();
+        let (width, height) = client.window_size(&tab);
+        let session = client.attach(&tab);
+        let ratio = client.eval(&session, "devicePixelRatio").as_f64().unwrap();
+        let id = window["id"].as_u64().unwrap().to_string();
+        let result = ok(&record(
+            "content",
+            &["--window-id", &id, "--duration", "3s"],
+        ));
+        let ms = result["duration_ms"].as_u64().unwrap();
+        assert!((2500..=3500).contains(&ms), "duration_ms {ms}");
+        assert!(result["frames_stored"].as_u64().unwrap() >= 20, "{result}");
+        let expected = (
+            (width * ratio).round() as i64,
+            (height * ratio).round() as i64,
+        );
+        for frame in stored_frames(&result) {
+            let got = (i64::from(frame.width()), i64::from(frame.height()));
+            assert!(
+                (got.0 - expected.0).abs() <= 2 && (got.1 - expected.1).abs() <= 2,
+                "frame {got:?}, window {expected:?}"
+            );
+        }
+    }
+
+    /// Criterion 7.
+    #[test]
+    #[ignore]
+    fn still_page_stores_few_frames() {
+        let (_browser, window) = test_window("still", "still");
+        let id = window["id"].as_u64().unwrap().to_string();
+        let result = ok(&record("still", &["--window-id", &id, "--duration", "3s"]));
+        let stored = result["frames_stored"].as_u64().unwrap();
+        assert!((1..=3).contains(&stored), "frames_stored {stored}");
+        assert!(std::path::Path::new(result["contact_sheet"].as_str().unwrap()).is_file());
+    }
+
+    /// Criterion 8.
+    #[test]
+    #[ignore]
+    fn ending_chrome_ends_the_recording() {
+        let (browser, window) = test_window("end", "anim");
+        let out = out_dir("end");
+        let id = window["id"].as_u64().unwrap().to_string();
+        let started = recdr()
+            .args(["start", "--window-id", &id, "--out"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        let recording = ok(&started)["id"].as_str().unwrap().to_owned();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(browser);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let status = recdr()
+                .args(["status", &recording, "--out"])
+                .arg(&out)
+                .output()
+                .unwrap();
+            if ok(&status)["recordings"][0]["status"] == "finished" {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "not finished: {}",
+                ok(&status)
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        let stopped = recdr()
+            .args(["stop", &recording, "--out"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        let result = ok(&stopped);
+        assert_eq!(result["stop_reason"], "window_closed");
+        let gif = std::fs::File::open(result["gif"].as_str().unwrap()).unwrap();
+        let mut decoder = gif::DecodeOptions::new().read_info(gif).unwrap();
+        assert!(decoder.read_next_frame().unwrap().is_some());
     }
 
     #[test]

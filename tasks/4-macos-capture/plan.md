@@ -71,6 +71,7 @@ Each is a choice the spec left to the plan.
 11. **A test window has a title no other window has.** The three test pages set their title from the address's fragment when there is one, so a test opens `/anim#recdr-test-<pid>-<name>` and finds its window by that exact title, as the Windows tests find theirs. A fixed title such as `anim` would also match an editor tab on the owner's Mac.
 12. **A try-out program lives on a branch that is never merged.** Task 4's program is a cargo project in `spike/sck/` on the branch `spike/4-sck`, cut from the work branch. It is run on the owner's Mac. Its one CI run is a draft pull request from that branch, with one step added to `ci.yml` on that branch; the pull request is closed unmerged. Nothing on that branch is under this plan's File boundary, because none of it reaches the work branch.
 13. **CI runs on pull requests, and it is where the other two systems are checked.** Phase 1 is built on Windows and Phases 2 to 4 on the Mac, so "the three commands" of a task run on one system. At Checkpoint A the owner pushes the work branch and opens a draft pull request, and the build asks once whether it may push to that pull request after each later task. From Task 5 each task's commit is pushed, by the build or by the owner, and the three CI jobs are green before the next task starts. That is how "Windows is unchanged" and "Linux still answers `unsupported_platform`" are checked in Tasks 5 to 11.
+16. **The lists come from CoreGraphics; only the recorder uses ScreenCaptureKit.** Found in Task 8: `recdr start --monitor 0` failed with `recorder_start_failed` every time, its recorder blocked in `SCStream::start_capture` until the 30 s timeout. `replayd` started the stream and stopped it when `start` exited. The recorder started in under a second when `start` made no ScreenCaptureKit call (tried with canned lists, then with CoreGraphics lists), and from a Python parent. A try-out parent that used ScreenCaptureKit and slept did not show it, so the exact trigger is not known; the CoreGraphics lists avoid it for `start` and for the MCP server.
 15. **A `build.rs` gives every macOS binary the Swift rpath.** Found in Task 4: on macOS it prints `cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift`, which reaches the binary, the test binaries and the examples, and, when `<xcode-select -p>/usr/lib/swift/macosx` exists (the command line tools without Xcode), `cargo:rustc-link-search=native=` of it. It reads `CARGO_CFG_TARGET_OS`, so it has no `cfg` attribute. On Windows and Linux it prints nothing.
 14. **Every recording has its own process.** `record` records in the command's process, and `start` and the MCP tools run `_recorder`. So a source, and its event tap, is opened once per process, and what must hold is that dropping it returns.
 
@@ -178,17 +179,18 @@ fn permitted() -> Result<()>
 /// The window filter: an ordinary window (layer 0) with a title, owned by an application.
 fn listed(layer: i32, title: &str, has_application: bool) -> bool
 
-/// The displays ScreenCaptureKit reports, in its order.
-fn displays(content: &SCShareableContent) -> Vec<Display>
+/// The active displays in CoreGraphics' order, with their ids.
+fn cg_displays() -> Vec<(u32, Display)>
 ```
 
 - `permitted`: `CGPreflightScreenCaptureAccess()`; when false, `CGRequestScreenCaptureAccess()` and `Err(Error::PermissionDenied)`.
-- `list_monitors`: `permitted()?`, the shareable content, `displays`, `display_bounds`. Entry `i` is `MonitorInfo { index: i, bounds, primary: d.x == 0.0 && d.y == 0.0 }`.
-- `list_windows`: `permitted()?`, the shareable content, every window for which `listed` is true. `id` is the window id as `u64`; `title`; `process` is the owning application's name; `pid` its process id; `bounds` is `to_pixels(&displays, frame.x, frame.y, frame.width, frame.height)`; `minimized` is true when `is_on_screen` is false.
+- Changed in Task 8 (decision 16): both lists come from CoreGraphics, and only `open` calls ScreenCaptureKit.
+- `list_monitors`: `permitted()?`, `cg_displays`, `display_bounds`. Entry `i` is `MonitorInfo { index: i, bounds, primary: d.x == 0.0 && d.y == 0.0 }`.
+- `list_windows`: `permitted()?`, `CGWindowListCopyWindowInfo(OptionAll, 0)`, every window for which `listed` is true with `has_application` meaning a non-empty owner name. `id` is `kCGWindowNumber`; `title` is `kCGWindowName`; `process` is `kCGWindowOwnerName`; `pid` is `kCGWindowOwnerPID`; `bounds` is `to_pixels(&displays, frame.x, frame.y, frame.width, frame.height)` of `kCGWindowBounds`; `minimized` is true when `kCGWindowIsOnscreen` is absent or false (ScreenCaptureKit's `is_on_screen` agreed on the test window in Task 8).
 - `listed`: `layer == 0 && !title.is_empty() && has_application`.
-- A display's `scale` is `point_pixel_scale` of a content filter made for that display.
+- `cg_displays`: `CGGetActiveDisplayList`; for each id `CGDisplayBounds` (points) and a scale of `CGDisplayModeGetPixelWidth` divided by `CGDisplayModeGetWidth` of its current mode, 1 when it has none.
 - `open`, for `ResolvedKind::Window(id)`: `permitted()?`; the window with that id, or `Error::TargetNotFound(format!("window id {id}"))`; a filter for that one window. The size is the filter's `content_rect` size times its `point_pixel_scale`, rounded. The source keeps the window's corner in points and that scale for the click filter.
-- `open`, for `ResolvedKind::Monitor { index, crop }`: `permitted()?`; the display at `index`, or `Error::TargetNotFound(format!("monitor {index}"))`; a filter for that display. With a crop, the stream's source rectangle is `to_points(crop, scale)` and the size is the crop's; without one the size is the display's `bounds` size. The corner in points is the display's corner, plus the crop's corner in points.
+- `open`, for `ResolvedKind::Monitor { index, crop }`: `permitted()?`; the display at `index` of `cg_displays`, matched to ScreenCaptureKit's display with the same `display_id()`, or `Error::TargetNotFound(format!("monitor {index}"))`; a filter for that display. With a crop, the stream's source rectangle is `to_points(crop, scale)` and the size is the crop's; without one the size is the display's `bounds` size. The corner in points is the display's corner, plus the crop's corner in points.
 - `open`, any other kind: `Error::CaptureFailed("this target has no ScreenCaptureKit source".into())`. Between Tasks 7 and 8 `ResolvedKind::Window` is answered with `Error::CaptureFailed("window targets are not built yet on macOS".into())`.
 - The stream is configured with the size above, a minimum frame interval of `1 / fps` seconds, `with_shows_cursor(cursor)`, a BGRA pixel format and scaling to fit (decision 6). When `clicks` is true the source holds `tap::ClickTap::start()`.
 - The channel carries `enum Item { Frame(Frame), Stopped(String) }` and is a `sync_channel::<Item>(2)`.
@@ -326,7 +328,7 @@ objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"       # added in Task 9
 ```
 
-When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features found in Task 4 (`default-features = false` plus what the compiler named): `objc2-core-graphics` needs `CGDirectDisplay` (`CGMainDisplayID`, and the test's display modes), `CGError` (the test's `CGGetActiveDisplayList`) and `CGWindow` (the screen permission) from Task 5, and `CGEvent` and `CGEventTypes` from Task 9; `objc2-core-foundation` needs `CFMachPort` and `CFRunLoop` from Task 9.
+When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features found in Task 4 (`default-features = false` plus what the compiler named): `objc2-core-graphics` needs `CGDirectDisplay` (`CGMainDisplayID`, and the test's display modes), `CGError` (the test's `CGGetActiveDisplayList`) and `CGWindow` (the screen permission) from Task 5, `CGGeometry` (`CGRectMakeWithDictionaryRepresentation`) from Task 8, and `CGEvent` and `CGEventTypes` from Task 9; `objc2-core-foundation` needs `CFArray`, `CFDictionary`, `CFNumber` and `CFString` from Task 8 (the window list, decision 16), and `CFMachPort` and `CFRunLoop` from Task 9.
 
 ### `build.rs`
 

@@ -1,12 +1,21 @@
-//! macOS desktop capture with ScreenCaptureKit: the permission check, the window and
-//! monitor lists in pixels, and the recording source.
+//! macOS desktop capture: the permission check, the window and monitor lists in pixels
+//! (from CoreGraphics), and the recording source (ScreenCaptureKit).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TrySendError};
 use std::time::Duration;
 
-use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
+use objc2_core_foundation::{
+    CFArray, CFBoolean, CFDictionary, CFNumber, CFRetained, CFString, CFType,
+};
+use objc2_core_graphics::{
+    CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayMode, CGGetActiveDisplayList,
+    CGMainDisplayID, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
+    CGRequestScreenCaptureAccess, CGWindowListCopyWindowInfo, CGWindowListOption, kCGWindowBounds,
+    kCGWindowIsOnscreen, kCGWindowLayer, kCGWindowName, kCGWindowNumber, kCGWindowOwnerName,
+    kCGWindowOwnerPID,
+};
 use screencapturekit::cm::SCFrameStatus;
 use screencapturekit::cv::CVPixelBufferLockFlags;
 use screencapturekit::prelude::*;
@@ -18,32 +27,66 @@ use crate::model::{CaptureEvent, Frame, MonitorInfo, ResolvedKind, ResolvedTarge
 
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     permitted()?;
-    let content = content()?;
-    let displays = displays(&content);
-    Ok(content
-        .windows()
+    let displays: Vec<Display> = cg_displays().into_iter().map(|(_, d)| d).collect();
+    let Some(list) = CGWindowListCopyWindowInfo(CGWindowListOption::OptionAll, 0) else {
+        return Err(Error::CaptureFailed(
+            "macOS did not list the windows".into(),
+        ));
+    };
+    // SAFETY: CGWindowListCopyWindowInfo returns an array of dictionaries whose keys
+    // are strings.
+    let list: CFRetained<CFArray<CFDictionary<CFString, CFType>>> =
+        unsafe { CFRetained::cast_unchecked(list) };
+    Ok(list
         .iter()
-        .filter_map(|w| {
-            let app = w.owning_application();
-            let title = w.title().unwrap_or_default();
-            if !listed(w.window_layer(), &title, app.is_some()) {
+        .filter_map(|window| {
+            let text = |key: &CFString| {
+                let value = window.get(key)?.downcast::<CFString>().ok()?;
+                Some(value.to_string())
+            };
+            let number = |key: &CFString| window.get(key)?.downcast::<CFNumber>().ok()?.as_i64();
+            // SAFETY: the keys are statics CoreGraphics defines.
+            let (id_key, layer_key, name_key, owner_key, pid_key, bounds_key, onscreen_key) = unsafe {
+                (
+                    kCGWindowNumber,
+                    kCGWindowLayer,
+                    kCGWindowName,
+                    kCGWindowOwnerName,
+                    kCGWindowOwnerPID,
+                    kCGWindowBounds,
+                    kCGWindowIsOnscreen,
+                )
+            };
+            let title = text(name_key).unwrap_or_default();
+            let process = text(owner_key).unwrap_or_default();
+            let layer = number(layer_key)? as i32;
+            if !listed(layer, &title, !process.is_empty()) {
                 return None;
             }
-            let app = app?;
-            let f = w.frame();
+            let bounds = window.get(bounds_key)?.downcast::<CFDictionary>().ok()?;
+            let mut frame = objc2_core_foundation::CGRect::default();
+            // SAFETY: `bounds` is the window's bounds dictionary and `frame` a valid
+            // out pointer.
+            if !unsafe { CGRectMakeWithDictionaryRepresentation(Some(&bounds), &mut frame) } {
+                return None;
+            }
+            let on_screen = window
+                .get(onscreen_key)
+                .and_then(|v| v.downcast::<CFBoolean>().ok())
+                .is_some_and(|v| v.as_bool());
             Some(WindowInfo {
-                id: u64::from(w.window_id()),
+                id: number(id_key)? as u64,
                 title,
-                process: app.application_name(),
-                pid: app.process_id() as u32,
+                process,
+                pid: number(pid_key)? as u32,
                 bounds: to_pixels(
                     &displays,
-                    f.origin.x,
-                    f.origin.y,
-                    f.size.width,
-                    f.size.height,
+                    frame.origin.x,
+                    frame.origin.y,
+                    frame.size.width,
+                    frame.size.height,
                 ),
-                minimized: !w.is_on_screen(),
+                minimized: !on_screen,
             })
         })
         .collect())
@@ -56,7 +99,7 @@ fn listed(layer: i32, title: &str, has_application: bool) -> bool {
 
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     permitted()?;
-    let displays = displays(&content()?);
+    let displays: Vec<Display> = cg_displays().into_iter().map(|(_, d)| d).collect();
     Ok(display_bounds(&displays)
         .into_iter()
         .zip(&displays)
@@ -67,6 +110,48 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
             primary: d.x == 0.0 && d.y == 0.0,
         })
         .collect())
+}
+
+/// The active displays in CoreGraphics' order, with their ids. The lists come from
+/// CoreGraphics, not ScreenCaptureKit: a process that has asked ScreenCaptureKit for
+/// its shareable content and stays alive (`start`, the MCP server) keeps the recorder
+/// it starts from ever getting its stream started (tasks/4-macos-capture, Task 8).
+fn cg_displays() -> Vec<(u32, Display)> {
+    let mut ids = [0u32; 32];
+    let mut count = 0u32;
+    // SAFETY: `ids` holds 32 entries and `count` is a valid out pointer.
+    let status = unsafe { CGGetActiveDisplayList(32, ids.as_mut_ptr(), &mut count) };
+    if status.0 != 0 {
+        return Vec::new();
+    }
+    ids[..count as usize]
+        .iter()
+        .map(|&id| {
+            let frame = CGDisplayBounds(id);
+            let display = Display {
+                x: frame.origin.x,
+                y: frame.origin.y,
+                width: frame.size.width,
+                height: frame.size.height,
+                scale: display_scale(id),
+            };
+            (id, display)
+        })
+        .collect()
+}
+
+/// Pixels per point of the display's current mode.
+// ponytail: a display without a mode counts as 1x; its frames would then be smaller
+// than the screen, which the monitor test would show.
+fn display_scale(id: u32) -> f64 {
+    let Some(mode) = CGDisplayCopyDisplayMode(id) else {
+        return 1.0;
+    };
+    let points = CGDisplayMode::width(Some(&mode));
+    if points == 0 {
+        return 1.0;
+    }
+    CGDisplayMode::pixel_width(Some(&mode)) as f64 / points as f64
 }
 
 /// What the stream hands the recorder: a complete frame, or the stop notice.
@@ -87,16 +172,20 @@ impl SckSource {
         permitted()?;
         let content = content()?;
         let failed = |e: SCError| Error::CaptureFailed(e.to_string());
-        let (filter, size, source) = match &resolved.kind {
+        let (filter, size, source, _corner, _scale) = match &resolved.kind {
             ResolvedKind::Monitor { index, crop } => {
-                let all = content.displays();
-                let display = all
-                    .get(*index)
-                    .ok_or_else(|| Error::TargetNotFound(format!("monitor {index}")))?;
-                let displays = displays(&content);
-                let (info, bounds) = (displays[*index], display_bounds(&displays)[*index]);
+                let all = cg_displays();
+                let not_found = || Error::TargetNotFound(format!("monitor {index}"));
+                let (id, info) = *all.get(*index).ok_or_else(not_found)?;
+                let displays: Vec<Display> = all.iter().map(|(_, d)| *d).collect();
+                let bounds = display_bounds(&displays)[*index];
+                let display = content
+                    .displays()
+                    .into_iter()
+                    .find(|d| d.display_id() == id)
+                    .ok_or_else(not_found)?;
                 let filter = SCContentFilter::create()
-                    .with_display(display)
+                    .with_display(&display)
                     .with_excluding_windows(&[])
                     .build()
                     .map_err(failed)?;
@@ -104,15 +193,35 @@ impl SckSource {
                     Some(crop) => {
                         let (x, y, w, h) = to_points(crop, info.scale);
                         let source = CGRect::new(x, y, w, h);
-                        (filter, (crop.width, crop.height), Some(source))
+                        let corner = (info.x + x, info.y + y);
+                        let size = (crop.width, crop.height);
+                        (filter, size, Some(source), corner, info.scale)
                     }
-                    None => (filter, (bounds.width, bounds.height), None),
+                    None => {
+                        let size = (bounds.width, bounds.height);
+                        (filter, size, None, (info.x, info.y), info.scale)
+                    }
                 }
             }
-            ResolvedKind::Window(_) => {
-                return Err(Error::CaptureFailed(
-                    "window targets are not built yet on macOS".into(),
-                ));
+            ResolvedKind::Window(id) => {
+                let window = content
+                    .windows()
+                    .into_iter()
+                    .find(|w| u64::from(w.window_id()) == *id)
+                    .ok_or_else(|| Error::TargetNotFound(format!("window id {id}")))?;
+                // A window filter aborts the process in CGS_REQUIRE_INIT unless
+                // CoreGraphics has connected to the window server; this connects it.
+                CGMainDisplayID();
+                let filter = SCContentFilter::create()
+                    .with_window(&window)
+                    .build()
+                    .map_err(failed)?;
+                let (rect, scale) = (filter.content_rect(), f64::from(filter.point_pixel_scale()));
+                let size = (
+                    (rect.size.width * scale).round() as u32,
+                    (rect.size.height * scale).round() as u32,
+                );
+                (filter, size, None, (rect.origin.x, rect.origin.y), scale)
             }
             ResolvedKind::Fake(_) | ResolvedKind::Tab(_) => {
                 return Err(Error::CaptureFailed(
@@ -231,36 +340,6 @@ fn permitted() -> Result<()> {
 fn content() -> Result<SCShareableContent> {
     SCShareableContent::get()
         .map_err(|e| Error::CaptureFailed(format!("macOS did not list the screen: {e}")))
-}
-
-/// The displays ScreenCaptureKit reports, in its order.
-fn displays(content: &SCShareableContent) -> Vec<Display> {
-    content
-        .displays()
-        .iter()
-        .map(|d| {
-            let frame = d.frame();
-            Display {
-                x: frame.origin.x,
-                y: frame.origin.y,
-                width: frame.size.width,
-                height: frame.size.height,
-                scale: display_scale(d),
-            }
-        })
-        .collect()
-}
-
-/// `point_pixel_scale` of a filter made for the display.
-// ponytail: a display whose filter cannot be built counts as 1x; its frames would then
-// be smaller than the screen, which the monitor test would show.
-fn display_scale(display: &SCDisplay) -> f64 {
-    SCContentFilter::create()
-        .with_display(display)
-        .with_excluding_windows(&[])
-        .build()
-        .map(|f| f64::from(f.point_pixel_scale()))
-        .unwrap_or(1.0)
 }
 
 #[cfg(test)]
