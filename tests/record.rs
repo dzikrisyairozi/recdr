@@ -38,31 +38,48 @@ fn error_code(output: &Output) -> (Option<i32>, String) {
 
 #[test]
 fn moving_for_one_second() {
-    let (output, out) = record(
-        "moving",
-        "moving-1s",
-        &["--monitor", "0", "--duration", "1s"],
-    );
-    let result = ok(&output);
+    // On a loaded macOS runner the synthetic source's 33 ms sleep has woken only every
+    // 160 ms, so one run in a few stored 9 frames. A slow limiter fails both runs; a
+    // starved runner almost never does, so the recording gets a second try.
+    let mut attempt = 0;
+    let (result, out, manifest) = loop {
+        attempt += 1;
+        let (output, out) = record(
+            "moving",
+            &format!("moving-1s-{attempt}"),
+            &["--monitor", "0", "--duration", "1s"],
+        );
+        let result = ok(&output);
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
+                .unwrap();
+        // The limiter's output is what was stored plus what the writer replaced while
+        // it was busy (`dropped_frames`; the synthetic source drops none).
+        let stored = result["frames_stored"].as_u64().unwrap();
+        let passed = stored + result["dropped_frames"].as_u64().unwrap();
+        let times: Vec<u64> = manifest["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["t_ms"].as_u64().unwrap())
+            .collect();
+        let message = format!(
+            "{stored} stored and {passed} through the limiter: not at 15 fps; stored at {times:?} ms"
+        );
+        assert!(passed <= 17, "{message}");
+        if passed >= 10 {
+            break (result, out, manifest);
+        }
+        assert!(attempt < 2, "twice: {message}");
+        eprintln!("attempt {attempt}: {message}");
+    };
     assert_eq!(result["stop_reason"], "duration_reached");
     assert_eq!(result["width"], 320);
     assert_eq!(result["height"], 240);
     let duration = result["duration_ms"].as_u64().unwrap();
     assert!((1000..=1500).contains(&duration), "{duration}");
     let stored = result["frames_stored"].as_u64().unwrap();
-    let manifest: Value =
-        serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
-            .unwrap();
     let frames = manifest["frames"].as_array().unwrap();
-    let times: Vec<u64> = frames.iter().map(|f| f["t_ms"].as_u64().unwrap()).collect();
-    // The limiter's output is what was stored plus what the writer replaced while it was
-    // busy (`dropped_frames`; the synthetic source drops none). On a loaded runner the
-    // writer can lose a few early frames, which is not the limiter's fault.
-    let passed = stored + result["dropped_frames"].as_u64().unwrap();
-    assert!(
-        (10..=17).contains(&passed),
-        "{stored} stored and {passed} through the limiter: not at 15 fps; stored at {times:?} ms"
-    );
 
     assert_eq!(frames.len() as u64, stored);
     assert_eq!(frames[0]["t_ms"], 0);
