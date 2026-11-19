@@ -1,0 +1,15 @@
+[package]
+name = "sck-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+screencapturekit = { version = "11.1", features = ["macos_14_0"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGEvent", "CGEventTypes", "CGWindow", "CGDirectDisplay"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["CFMachPort", "CFRunLoop"] }
+libc = "0.2"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+serde_json = "1"
