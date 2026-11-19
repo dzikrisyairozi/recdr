@@ -530,6 +530,45 @@ mod on_macos {
         assert!(decoder.read_next_frame().unwrap().is_some());
     }
 
+    /// Criterion 10. If macOS refuses the detached recorder the screen although this
+    /// process may read it, `start` fails with `permission_denied` here.
+    #[test]
+    #[ignore]
+    fn detached_recording_and_mcp_work_on_a_window() {
+        let (_browser, window) = test_window("mcp", "anim");
+        let id = window["id"].as_u64().unwrap();
+        let out = out_dir("mcp");
+        let local = |args: &[&str]| recdr().args(args).arg("--out").arg(&out).output().unwrap();
+        let started = ok(&local(&["start", "--window-id", &id.to_string()]));
+        let recording = started["id"].as_str().unwrap().to_owned();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        ok(&local(&["mark", &recording, "halfway"]));
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let result = ok(&local(&["stop", &recording]));
+        assert_eq!(result["marks"][0]["label"], "halfway");
+        let frames = ok(&local(&["frames", &recording, "--keyframes"]));
+        assert!(!frames["frames"].as_array().unwrap().is_empty(), "{frames}");
+
+        let mut server = common::Server::start(None);
+        let windows = server.call("list_windows", serde_json::json!({}));
+        let windows: Value = serde_json::from_str(&common::text(&windows)).unwrap();
+        assert!(
+            windows["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|w| w["id"] == id)
+        );
+        let monitors = server.call("list_monitors", serde_json::json!({}));
+        let monitors: Value = serde_json::from_str(&common::text(&monitors)).unwrap();
+        assert!(!monitors["monitors"].as_array().unwrap().is_empty());
+        let args = serde_json::json!({"window_id": id, "duration": "1s", "out": out});
+        let recorded = server.call("record", args);
+        assert!(!common::is_error(&recorded), "{recorded}");
+        let result: Value = serde_json::from_str(&common::text(&recorded)).unwrap();
+        assert!(result["contact_sheet"].is_string(), "{result}");
+    }
+
     #[test]
     #[ignore]
     fn monitors_have_one_primary_and_pixel_sizes() {
