@@ -36,16 +36,18 @@ windows = { version = "0.62", features = [
     "Win32_UI_HiDpi",
 ] }
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 [target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "11.1", features = ["macos_14_0"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGDirectDisplay", "CGError", "CGEvent", "CGEventTypes", "CGGeometry", "CGWindow"] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSError", "NSString", "NSURL", "NSValue"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVAssetWriter", "AVAssetWriterInput", "AVMediaFormat", "AVVideoSettings", "objc2-core-media", "objc2-core-video"] }
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFArray", "CFDictionary", "CFMachPort", "CFNumber", "CFRunLoop", "CFString"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # Dependencies (PNG and GIF encoding) are optimised in debug builds too; unoptimised
 # PNG encoding drops most frames of a 1080p recording, so tests and `cargo run`

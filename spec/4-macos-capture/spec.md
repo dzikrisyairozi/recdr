@@ -101,7 +101,9 @@ Choosing the monitor for a region, matching a window by title or process, and re
 
 ### Listing
 
-`recdr monitors` prints one entry per display, with `index` starting at 0 in the order ScreenCaptureKit returns them, `bounds`, and `primary` true for the main display.
+`recdr monitors` prints one entry per display, with `index` starting at 0 in the order CoreGraphics lists the active displays (`CGGetActiveDisplayList`), `bounds`, and `primary` true for the main display.
+
+Both lists come from CoreGraphics (`CGGetActiveDisplayList` and `CGWindowListCopyWindowInfo`), not ScreenCaptureKit; only the recorder opens a ScreenCaptureKit stream. A process that has asked ScreenCaptureKit for its shareable content and is still running when a recorder it started opens a stream keeps that stream from starting (found in the plan's Task 8), and `start` and the MCP server are such processes. Window ids are the same `CGWindowID` in both frameworks.
 
 `recdr windows` prints the windows that are at layer 0 (ordinary application windows), have a title, and belong to an application. This rule is called the window filter below. Each window has:
 
@@ -109,8 +111,8 @@ Choosing the monitor for a region, matching a window by title or process, and re
 |---|---|
 | `id` | The window number macOS assigns (`CGWindowID`) |
 | `title` | The window title |
-| `process` | The owning application's name, for example `Google Chrome` |
-| `pid` | The owning application's process id |
+| `process` | The owning application's name (`kCGWindowOwnerName`), for example `Google Chrome` |
+| `pid` | The owning application's process id (`kCGWindowOwnerPID`) |
 | `bounds` | In pixels, by the rule above |
 | `minimized` | True when macOS reports the window as not on screen: minimized, hidden with its application, or on another Space |
 
@@ -303,6 +305,7 @@ A "test window" is the Chrome window described under Testing strategy, 800 by 60
 - Positions in pixels on every system.
 - One new error code, `permission_denied`, in place of reusing `capture_failed`, so an agent can tell "ask the owner for a permission" from "something broke".
 - The test window is Chrome in `--app` mode, which the browser tests already require.
+- Changed during the build (2026-11-20): the window and monitor lists come from CoreGraphics, not ScreenCaptureKit, because a running `start` or MCP server that had used ScreenCaptureKit kept its recorder's stream from starting. The owner is told in the pull request.
 
 ## Open questions
 
