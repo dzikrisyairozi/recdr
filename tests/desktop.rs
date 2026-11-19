@@ -434,11 +434,27 @@ mod on_macos {
         let result = ok(&record("green", &args));
         let frames = stored_frames(&result);
         assert!(!frames.is_empty());
-        for frame in frames {
-            assert_eq!((frame.width(), frame.height()), (400, 300));
-            let [r, g, b, _] = frame.get_pixel(200, 150).0;
-            let (r, g, b) = (u32::from(r), u32::from(g), u32::from(b));
-            assert!(g > 2 * r && g > 2 * b, "center pixel {r},{g},{b}");
+        let centers: Vec<[u32; 3]> = frames
+            .iter()
+            .map(|frame| {
+                assert_eq!((frame.width(), frame.height()), (400, 300));
+                let [r, g, b, _] = frame.get_pixel(200, 150).0;
+                [r, g, b].map(u32::from)
+            })
+            .collect();
+        let green = |&[r, g, b]: &[u32; 3]| g > 2 * r && g > 2 * b;
+        if !centers.iter().all(green) {
+            // The same point of the screen in a monitor recording, to tell the region
+            // code from what is on the screen.
+            let whole = ok(&record(
+                "green-whole",
+                &["--monitor", "0", "--duration", "1s"],
+            ));
+            let frame = stored_frames(&whole).pop().unwrap();
+            let monitor = frame.get_pixel((x + 200) as u32, (y + 150) as u32).0;
+            panic!(
+                "center pixel of each frame: {centers:?}; the same point in a monitor recording: {monitor:?}; window {window}"
+            );
         }
     }
 

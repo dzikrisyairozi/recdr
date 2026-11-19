@@ -33,5 +33,6 @@ jobs:
       - run: cargo test --test browser -- --ignored --test-threads=1
       # The desktop tests record the runner's screen; Task 4 of macos-capture showed a
       # ScreenCaptureKit stream delivers frames on the hosted macOS runner.
-      - if: runner.os == 'macOS'
+      # It runs after a failed browser step too, so one does not hide the other's result.
+      - if: runner.os == 'macOS' && !cancelled()
         run: cargo test --test desktop -- --ignored --test-threads=1
