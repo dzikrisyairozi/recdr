@@ -171,6 +171,7 @@ cargo test
 ### Checkpoint C: macOS is done (needs the pull request)
 - [x] The `test` job is green on `macos-latest`, and its log shows the pixel check ran and printed no note about a missing ffmpeg.
 - [ ] By hand, on the owner's Mac if there is one: criterion 13 for macOS.
+  - 2026-11-20: played through AVFoundation and WebKit by the agent (acceptance.md, 13); left open for the owner to play it in QuickTime Player and Safari.
 
 ## Phase 4: the rest
 
