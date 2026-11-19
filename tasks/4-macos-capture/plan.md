@@ -32,7 +32,27 @@ On 2026-11-18, before `cdp-capture` was built and with no Mac at hand. What it d
 
 ### What was measured
 
-Nothing on macOS. The spec's "What was checked" lists what was read from crate sources. Task 4 measures, and its results go here.
+Task 4, on 2026-11-19 and 2026-11-20, on the owner's MacBook (Apple M5, one built-in display of 1512 by 982 points at scale 2, macOS 26.6.2, Xcode command line tools only), with the try-out program on `spike/4-sck`. Its output is in [acceptance.md](acceptance.md).
+
+The spec's "Not checked" list:
+
+1. **A stream on a hosted runner:** delivers frames. On `macos-latest` (draft pull request #12, closed unmerged) a display stream gave 12 complete frames of 1024 by 768 in 1.4 s. Task 11 adds the CI step.
+2. **The tap and Input Monitoring:** with the permission on, `CGEventTapCreate` returns a tap and `start_then_drop_returns` holds (the drop returns in under 1 ms). With it off: could not be tried without a person; it is on the owner's list. `start` refuses on `CGPreflightListenEventAccess` alone, so the answer does not change the code.
+3. **A window minimized, on another Space, closed:** minimized gives one frame with status `Suspended` and then nothing, no stop notice, and the window stays listed with `is_on_screen` false. Restored, complete frames resume. Closed gives one frame with status `Stopped`, then `did_stop_with_error` with `SCStream error (No capture source provided): Failed to find any displays or windows to capture`. Another Space: could not be tried without a person.
+4. **The alert of fact 6:** could not be tried without a person watching the screen; on the owner's list.
+5. **Frame size of a window with a toolbar:** a Chrome `--app` window of 800 by 600 points has a filter `content_rect` of 800 by 600, equal to its frame and to CDP's `Browser.getWindowForTarget` bounds, title bar included, shadow excluded; frames are 1600 by 1200. The difference is 0 pixels.
+6. **The responsible program of a detached recorder:** a child started with `setsid()` in `pre_exec` and its output in a file has both permissions when Terminal has them: macOS counts Terminal. No dialog appeared, because the permissions were already given; which program a dialog names could not be seen.
+7. **macOS 13:** could not be tried, no such Mac. The README names macOS 14.
+8. **A resized window:** padded, not stretched. A window made 500 by 400 during a 1600 by 1200 stream is scaled up by 1.5 into the left 1500 by 1200 pixels, and the rest is black. Decision 6 stands.
+
+Also found:
+
+- **Build time:** the first `cargo build` of the try-out program took 99 s on the M5, the Swift packages included.
+- **The build needs a Swift rpath, and without Xcode a search path.** A program that depends on `screencapturekit` does not get the `-Wl,-rpath,/usr/lib/swift` that the crate's `build.rs` prints (a build script's `rustc-link-arg` applies to its own package only), and fails at start in `dyld` with `Library not loaded: @rpath/libswift_Concurrency.dylib`. This happened on the runner with Xcode too. With only the command line tools, linking also fails, because the crate adds `<xcode-select -p>/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx`, which only Xcode has; the libraries are in `<xcode-select -p>/usr/lib/swift/macosx`. recdr therefore gets a `build.rs` (decision 15).
+- **A window filter needs a window server connection.** `SCContentFilter::create().with_window(..).build()` aborts the process in `CGS_REQUIRE_INIT` unless CoreGraphics has connected first. A display filter built earlier does that, and so does `CGMainDisplayID()`; `open` calls `CGMainDisplayID()` first.
+- **Rows are padded:** 12160 bytes per row for 3024 pixels; the row-by-row copy is needed.
+- **`system_profiler SPDisplaysDataType` lists no display** on this Mac, only the GPU. The criterion 1 test reads display sizes from CoreGraphics instead (see `tests/desktop.rs`).
+- **A still display stream** delivers mostly `Idle` frames (148 of 150 in 10 s), which are not stored.
 
 ## Architecture decisions
 
@@ -51,11 +71,12 @@ Each is a choice the spec left to the plan.
 11. **A test window has a title no other window has.** The three test pages set their title from the address's fragment when there is one, so a test opens `/anim#recdr-test-<pid>-<name>` and finds its window by that exact title, as the Windows tests find theirs. A fixed title such as `anim` would also match an editor tab on the owner's Mac.
 12. **A try-out program lives on a branch that is never merged.** Task 4's program is a cargo project in `spike/sck/` on the branch `spike/4-sck`, cut from the work branch. It is run on the owner's Mac. Its one CI run is a draft pull request from that branch, with one step added to `ci.yml` on that branch; the pull request is closed unmerged. Nothing on that branch is under this plan's File boundary, because none of it reaches the work branch.
 13. **CI runs on pull requests, and it is where the other two systems are checked.** Phase 1 is built on Windows and Phases 2 to 4 on the Mac, so "the three commands" of a task run on one system. At Checkpoint A the owner pushes the work branch and opens a draft pull request, and the build asks once whether it may push to that pull request after each later task. From Task 5 each task's commit is pushed, by the build or by the owner, and the three CI jobs are green before the next task starts. That is how "Windows is unchanged" and "Linux still answers `unsupported_platform`" are checked in Tasks 5 to 11.
+15. **A `build.rs` gives every macOS binary the Swift rpath.** Found in Task 4: on macOS it prints `cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift`, which reaches the binary, the test binaries and the examples, and, when `<xcode-select -p>/usr/lib/swift/macosx` exists (the command line tools without Xcode), `cargo:rustc-link-search=native=` of it. It reads `CARGO_CFG_TARGET_OS`, so it has no `cfg` attribute. On Windows and Linux it prints nothing.
 14. **Every recording has its own process.** `record` records in the command's process, and `start` and the MCP tools run `_recorder`. So a source, and its event tap, is opened once per process, and what must hold is that dropping it returns.
 
 ### Spec changes made while planning
 
-None.
+None. Task 4 changed this plan: "What was measured", decision 15 and `build.rs`, the calls under `src/capture/macos.rs` and `src/capture/tap.rs`, the cargo features, and the criterion 1 oracle (CoreGraphics, as `system_profiler` lists no display).
 
 ## Module contracts
 
@@ -155,7 +176,7 @@ impl Drop for SckSource                 // stops the stream; the tap field is dr
 fn permitted() -> Result<()>
 
 /// The window filter: an ordinary window (layer 0) with a title, owned by an application.
-fn listed(layer: i64, title: &str, has_application: bool) -> bool
+fn listed(layer: i32, title: &str, has_application: bool) -> bool
 
 /// The displays ScreenCaptureKit reports, in its order.
 fn displays(content: &SCShareableContent) -> Vec<Display>
@@ -178,18 +199,29 @@ fn displays(content: &SCShareableContent) -> Vec<Display>
 - A failure to start the stream is handled as decision 7 says.
 - Every `unsafe` block has a comment that says what makes it sound.
 
-The ScreenCaptureKit calls are named in the spec's fact 1. Task 4 writes the exact Rust calls, with their argument types, under this heading. For decision 6 it also writes which value of a delivered frame gives its real size, and the call that changes a running stream's size.
+The calls that worked in Task 4, from `screencapturekit` 11.1.2 (`use screencapturekit::prelude::*;` and `use screencapturekit::stream::delegate_trait::StreamCallbacks;`), all blocking:
+
+- `SCShareableContent::get() -> Result<SCShareableContent, SCError>`; `.displays() -> Vec<SCDisplay>`, `.windows() -> Vec<SCWindow>`.
+- `SCWindow`: `window_id() -> u32`, `title() -> Option<String>`, `frame() -> CGRect` (points, origin top left), `window_layer() -> i32`, `is_on_screen() -> bool`, `owning_application() -> Option<SCRunningApplication>` with `application_name() -> String` and `process_id() -> i32`.
+- `SCDisplay::frame() -> CGRect` in points.
+- `SCContentFilter::create().with_display(&d).with_excluding_windows(&[]).build()` and `SCContentFilter::create().with_window(&w).build()`, each `SCResult<SCContentFilter>`; `.content_rect() -> CGRect` in points, `.point_pixel_scale() -> f32`. Before the first window filter of a process, `objc2_core_graphics::CGMainDisplayID()` is called (it aborts otherwise, see "What was measured").
+- `SCStreamConfiguration::new().with_width(u32).with_height(u32).with_minimum_frame_interval(&CMTime::new(1, fps as i32)).with_shows_cursor(bool).with_pixel_format(PixelFormat::BGRA).with_scales_to_fit(true)`, and `.with_source_rect(CGRect::new(x, y, w, h))` in points relative to the display for a crop.
+- `SCStream::new_with_delegate(&filter, &config, StreamCallbacks::new().on_error(move |e: SCError| ..)) -> SCResult<SCStream>`; `stream.add_output_handler(move |sample: CMSampleBuffer, kind: SCStreamOutputType| .., SCStreamOutputType::Screen)`; `start_capture()`, `stop_capture()`, each `Result<(), SCError>`. `on_error` is `did_stop_with_error`, the stop notice; `stop_capture` does not call it.
+- In the handler: `sample.frame_status() -> Option<SCFrameStatus>` (`SCFrameStatus::Complete` is a complete frame); `sample.pixel_buffer()`, then `.lock(CVPixelBufferLockFlags::READ_ONLY)` (from `screencapturekit::cv`), whose guard has `width()`, `height()`, `bytes_per_row()` and `unsafe fn as_slice() -> Option<&[u8]>`.
+- Decision 6: a frame's real content is its attachment `sample.content_rect()` (points of the output) and `sample.content_scale()`: the window's size in points is `content_rect` size divided by `content_scale`. A running stream's size changes with `stream.update_configuration(&config)`. Neither is needed while decision 6 stands.
 
 What Task 4 fills in, and the rule for each, so that nothing is chosen freely there:
 
 | Open until Task 4 | Rule |
 |---|---|
-| The exact `screencapturekit` calls | The calls the spec's fact 1 names. Where the crate has a blocking and an async form of one call, the blocking one. |
-| The cargo features of the two `objc2` crates | `default-features = false`, plus each feature the compiler names as missing, and no other. |
-| The type of `listed`'s first parameter | The type the crate's window layer has; `i64` above changes to it. |
-| The field names in `system_profiler`'s output | Measured (step 8). Expected: `_spdisplays_pixels`, a text such as `3024 x 1964`. |
-| The allowed difference in the criterion 3 test | The largest difference seen in step 2, plus 2 pixels. A difference above 8 pixels stops the build, because the spec says the frames have the size of the window's content. |
-| The title ScreenCaptureKit reports for the test window | Must equal the page's title (step 2). If it does not, the build stops: decision 11 and every macOS test rest on it. |
+| Open until Task 4 | Rule | Filled in |
+|---|---|---|
+| The exact `screencapturekit` calls | The calls the spec's fact 1 names. Where the crate has a blocking and an async form of one call, the blocking one. | Listed above; all blocking. |
+| The cargo features of the two `objc2` crates | `default-features = false`, plus each feature the compiler names as missing, and no other. | Under `Cargo.toml`. |
+| The type of `listed`'s first parameter | The type the crate's window layer has; `i64` above changes to it. | `i32`. |
+| The field names in `system_profiler`'s output | Measured (step 8). Expected: `_spdisplays_pixels`, a text such as `3024 x 1964`. | None: it lists no display here. CoreGraphics instead (`tests/desktop.rs`). |
+| The allowed difference in the criterion 3 test | The largest difference seen in step 2, plus 2 pixels. A difference above 8 pixels stops the build, because the spec says the frames have the size of the window's content. | 0 seen, so 2. |
+| The title ScreenCaptureKit reports for the test window | Must equal the page's title (step 2). If it does not, the build stops: decision 11 and every macOS test rest on it. | `recdr-spike-title`, equal. |
 
 ### `src/capture/tap.rs`
 
@@ -215,7 +247,8 @@ fn mask() -> u64
 - `start`: `let allowed = CGPreflightListenEventAccess() || CGRequestListenEventAccess();`. When `allowed` is false, print `WARNING` and return `None` without starting a thread: on some versions macOS creates a tap for a program without the permission and sends it nothing, and a recording must not report clicks as recorded then. Otherwise start the thread and wait on a `sync_channel(1)` for its report, which is `Option` of the thread's run loop: `None` when the tap is null. On `None`, `start` joins the thread, prints `WARNING` and returns `None`.
 - The thread creates the tap with `CGEventTapCreate` for the session, at the head, with the listen-only option and `mask()`. Its `user_info` is `Box::into_raw` of a box holding the `Sender<Press>` and a cell for the tap's port; the thread turns it back into a box, and so frees it, after the run loop returns. With a tap, the thread stores the port in the cell, adds the tap's source to its run loop, reports the run loop, and runs it.
 - The callback, by event type: a left, right or other mouse-button press sends `(time::now_unix_ms(), location.x, location.y, button)` with the button `"left"`, `"right"` or `"middle"`. The notice that the tap was disabled by a timeout (type `0xFFFF_FFFE`) switches the tap on again with `CGEventTapEnable`. Every other type, the notice of a tap disabled by user input among them, is ignored. The callback always returns the event unchanged.
-- `Drop` calls `CFRunLoopStop` on the thread's run loop and joins the thread. `CFRunLoopStop` may be called from another thread. If the binding's run loop type is not `Send`, the struct keeps it in a private wrapper with `unsafe impl Send` and a comment that says so.
+- `Drop` calls `CFRunLoopStop` on the thread's run loop and joins the thread. `CFRunLoopStop` may be called from another thread. The binding's run loop type, `CFRetained<CFRunLoop>`, is not `Send` (Task 4), so the struct keeps it in a private wrapper with `unsafe impl Send` and a comment that says so.
+- The calls that worked in Task 4: `CGEvent::tap_create(CGEventTapLocation::SessionEventTap, CGEventTapPlacement::HeadInsertEventTap, CGEventTapOptions::ListenOnly, mask(), Some(callback), user_info) -> Option<CFRetained<CFMachPort>>` (unsafe); the callback is `unsafe extern "C-unwind" fn(CGEventTapProxy, CGEventType, NonNull<CGEvent>, *mut c_void) -> *mut CGEvent` and returns `event.as_ptr()`; `CGEvent::location(Some(event)) -> CGPoint`; `CGEvent::tap_enable(&port, true)`; `CFMachPort::new_run_loop_source(None, Some(&port), 0)`; `CFRunLoop::current()`, `rl.add_source(Some(&source), unsafe { kCFRunLoopCommonModes })`, `CFRunLoop::run()`, `rl.stop()`. The event types are `CGEventType::LeftMouseDown`, `RightMouseDown`, `OtherMouseDown` and `TapDisabledByTimeout`; `CGEventType` is a newtype whose `.0` is the number for `mask`.
 - Unit tests: `mask() == 0x0200_000A`; and `start_then_drop_returns`, which starts a tap, drops it on a second thread and fails when the drop has not returned within 2 seconds (with no permission `start` is `None` and the test has nothing to drop).
 
 ### `tests/common/mod.rs`
@@ -264,9 +297,9 @@ Each macOS test is marked `#[ignore]`:
 
 Three of these tests compare recdr with something else, and what that is, is fixed here:
 
-- Criterion 1 needs each display's size in pixels from somewhere other than recdr. The test reads the displays from `system_profiler SPDisplaysDataType -json`; Task 4 writes down the field names. The two lists are compared as sorted lists of (width, height), because their orders can differ.
+- Criterion 1 needs each display's size in pixels from somewhere other than recdr. `system_profiler SPDisplaysDataType -json` lists no display on the owner's Mac (Task 4), so the test asks CoreGraphics, which ScreenCaptureKit does not use for this: `CGGetActiveDisplayList`, then for each display `CGDisplayCopyDisplayMode` and `CGDisplayModeGetPixelWidth` and `CGDisplayModeGetPixelHeight`. The two lists are compared as sorted lists of (width, height), because their orders can differ.
 - Criterion 2 compares `process` with the `process` of no other source. The test asserts that it is not empty and that the entry's `pid` is running (`kill -0 <pid>` exits 0).
-- Criterion 3 compares the stored frame size with `Client::window_size` times the page's `devicePixelRatio` (read with `Client::eval`), each side rounded, and allows a difference of 2 pixels each way. Task 4 measures the real difference and writes it here; a larger one changes this number or the spec, before Task 8.
+- Criterion 3 compares the stored frame size with `Client::window_size` times the page's `devicePixelRatio` (read with `Client::eval`), each side rounded, and allows a difference of 2 pixels each way. Task 4 measured a difference of 0 (800 by 600 points, 1600 by 1200 frames), so the allowance is 0 + 2 = 2.
 - Criterion 4, `--process`: the owner's own Chrome may be running under the same name. The command must either exit 0 or fail with `ambiguous_target` whose candidates include the test window's id.
 
 ### `tests/tabs.rs`
@@ -293,7 +326,26 @@ objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"       # added in Task 9
 ```
 
-When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features the two `objc2` crates need are found in Task 4 and written here.
+When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features found in Task 4 (`default-features = false` plus what the compiler named): `objc2-core-graphics` needs `CGDirectDisplay` (`CGMainDisplayID`, and the test's display modes) and `CGWindow` (the screen permission) from Task 5, and `CGEvent` and `CGEventTypes` from Task 9; `objc2-core-foundation` needs `CFMachPort` and `CFRunLoop` from Task 9.
+
+### `build.rs`
+
+Decision 15. Created in Task 5:
+
+```rust
+fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+        // With only the command line tools, screencapturekit's own search path is missing.
+        if let Ok(out) = std::process::Command::new("xcode-select").arg("-p").output() {
+            let dir = format!("{}/usr/lib/swift/macosx", String::from_utf8_lossy(&out.stdout).trim());
+            if std::path::Path::new(&dir).is_dir() {
+                println!("cargo:rustc-link-search=native={dir}");
+            }
+        }
+    }
+}
+```
 
 ### `.github/workflows/ci.yml`
 
@@ -307,6 +359,7 @@ Only when Task 4 shows that a stream delivers frames on `macos-latest`, Task 11 
 ## File boundary
 
 Create:
+- `build.rs` (decision 15, found in Task 4)
 - `src/capture/macos.rs`
 - `src/capture/tap.rs`
 - `tasks/4-macos-capture/acceptance.md`

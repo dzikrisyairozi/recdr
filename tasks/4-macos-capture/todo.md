@@ -79,7 +79,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 
 ## Phase 2: listing, on a Mac
 
-- [ ] **Task 4: try ScreenCaptureKit and the event tap, and write the results into this plan**
+- [x] **Task 4: try ScreenCaptureKit and the event tap, and write the results into this plan**
   - Description: A try-out program on the branch `spike/4-sck`, which is never merged (plan decision 12). It makes each call the two new files will make, once, on the owner's Mac, and answers the spec's "Not checked" list.
   - Steps, on `spike/4-sck`, in a cargo project in `spike/sck/` with `screencapturekit` 11.1 (feature `macos_14_0`), `objc2-core-graphics` 0.3 and `objc2-core-foundation` 0.3. Each numbered step is a subcommand of the program:
     1. `list`: print the displays and the windows; for each display and for one window, the `content_rect` and `point_pixel_scale` of its filter. Time the first `cargo build` and note it (the Swift package).
