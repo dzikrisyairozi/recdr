@@ -76,17 +76,20 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     // push every later slot back.
     let mut last_slot = 0;
     let (stop_reason, duration_ms) = loop {
-        let event = source.next_event(POLL)?;
+        // A paced source sends its next frame only after this one is handed on. While the
+        // writer still holds a frame it is not read, so the browser waits and no frame is
+        // replaced (cdp-capture criterion 4); the loop still reaches the stop checks.
+        let event = if source.paced() && !writer.wait_taken(POLL) {
+            None
+        } else {
+            source.next_event(POLL)?
+        };
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
-            // A paced source sends its next frame only after this one is handed on, so
-            // it waits for the writer rather than lose a frame (cdp-capture criterion 4).
-            Some(CaptureEvent::Frame(frame)) if source.paced() => {
-                writer.push_waiting(frame, elapsed_ms)?;
-                last_slot = elapsed_ms / interval_ms;
-            }
-            Some(CaptureEvent::Frame(frame)) if elapsed_ms / interval_ms > last_slot => {
+            Some(CaptureEvent::Frame(frame))
+                if source.paced() || elapsed_ms / interval_ms > last_slot =>
+            {
                 writer.push(frame, elapsed_ms)?;
                 last_slot = elapsed_ms / interval_ms;
             }
