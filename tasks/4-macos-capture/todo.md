@@ -161,7 +161,8 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `src/capture/macos.rs`, `src/capture/mod.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 8: record a window**
+- [x] **Task 8: record a window**
+  - 2026-11-20: the window tests pass on the Mac and the runner. Found: a running `start` or MCP server that had used ScreenCaptureKit kept its recorder's stream from starting; the lists now come from CoreGraphics (plan decision 16).
   - Description: The window target, with its end and its resize.
   - Steps:
     - `src/capture/macos.rs`: `open` for `ResolvedKind::Window`, and the stop notice as `CaptureEvent::Closed`.
@@ -194,7 +195,8 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `Cargo.toml`, `Cargo.lock`, `src/capture/tap.rs`, `src/capture/mod.rs`, `src/capture/macos.rs`, `tests/layers.rs`
   - Scope: M
 
-- [ ] **Task 10: a detached recording and the MCP tools**
+- [x] **Task 10: a detached recording and the MCP tools**
+  - 2026-11-20: `detached_recording_and_mcp_work_on_a_window` passes on the Mac and the runner.
   - Description: No production code is expected: `start`, `mark`, `stop`, `frames` and the MCP server sit above the capture layer. This task proves it on macOS.
   - Steps:
     - `tests/desktop.rs`, `on_macos`: `detached_recording_and_mcp_work_on_a_window`. It runs `start --window-id`, `mark`, `stop` and `frames --keyframes`, then starts the MCP server with `common::Server::start(None)` and calls `list_windows`, `list_monitors` and `record` with `window_id` and a 1 second duration.
@@ -209,12 +211,13 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Scope: S
 
 ### Checkpoint C: everything records
-- [ ] `cargo test --test desktop -- --ignored --test-threads=1` passes on the Mac.
+- [x] `cargo test --test desktop -- --ignored --test-threads=1` passes on the Mac. (10 passed, 72 s, 2026-11-20.)
 - [ ] By hand, by the owner: criteria 11 to 15, each with its result in `acceptance.md`.
 
 ## Phase 4: the rest
 
-- [ ] **Task 11: CI, README and the acceptance run**
+- [x] **Task 11: CI, README and the acceptance run**
+  - 2026-11-20: CI runs the desktop tests on macOS; README and `acceptance.md` done. Open: `region_inside_the_green_page_is_green` fails on the runner only (acceptance.md, 5).
   - Description: The desktop tests run in CI if Task 4 showed they can, the README describes macOS, and every criterion has a recorded result.
   - Steps:
     - `.github/workflows/ci.yml`: the step in Contracts, only if Task 4's CI run delivered frames.
