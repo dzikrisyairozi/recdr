@@ -141,6 +141,20 @@ impl Gui {
 }
 
 impl eframe::App for Gui {
+    /// Every way out ends here, also the ones that send no close request first: Quit
+    /// from the Dock or the app menu on macOS ends the event loop straight away. A
+    /// recording still running is stopped here, as a close request would.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if self.quitting {
+            return;
+        }
+        for action in state::step(&mut self.app, Event::CloseRequested, 0) {
+            if matches!(action, Action::Stop(_)) {
+                let _ = worker::perform(&self.app.out, action);
+            }
+        }
+    }
+
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         // The border windows are transparent but for the line they draw.
         [0.0; 4]
