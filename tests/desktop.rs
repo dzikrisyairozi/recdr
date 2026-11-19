@@ -434,12 +434,19 @@ mod on_macos {
         let result = ok(&record("green", &args));
         let frames = stored_frames(&result);
         assert!(!frames.is_empty());
-        for frame in frames {
-            assert_eq!((frame.width(), frame.height()), (400, 300));
-            let [r, g, b, _] = frame.get_pixel(200, 150).0;
-            let (r, g, b) = (u32::from(r), u32::from(g), u32::from(b));
-            assert!(g > 2 * r && g > 2 * b, "center pixel {r},{g},{b}");
-        }
+        let centers: Vec<[u32; 3]> = frames
+            .iter()
+            .map(|frame| {
+                assert_eq!((frame.width(), frame.height()), (400, 300));
+                let [r, g, b, _] = frame.get_pixel(200, 150).0;
+                [r, g, b].map(u32::from)
+            })
+            .collect();
+        let green = |&[r, g, b]: &[u32; 3]| g > 2 * r && g > 2 * b;
+        assert!(
+            centers.iter().all(green),
+            "center pixel of each frame: {centers:?}; window {window}"
+        );
     }
 
     /// Criterion 3. The window's size from CDP, in points, times the page's
