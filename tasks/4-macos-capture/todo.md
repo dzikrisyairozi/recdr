@@ -103,7 +103,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `tasks/4-macos-capture/plan.md`, `tasks/4-macos-capture/acceptance.md` (on the work branch; the program is on `spike/4-sck` only)
   - Scope: M
 
-- [ ] **Task 5: the permission check and `recdr monitors`**
+- [x] **Task 5: the permission check and `recdr monitors`**
   - Description: The first macOS code in the tree: recdr builds with ScreenCaptureKit, asks for the permission, and lists displays.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: `screencapturekit` and `objc2-core-graphics`.

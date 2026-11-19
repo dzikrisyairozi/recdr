@@ -72,10 +72,15 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
     forbid(&["rmcp", "tokio"], &["src/mcp.rs"]);
     forbid(&["base64"], &["src/mcp.rs", "src/capture/cdp.rs"]);
     forbid(&["tungstenite"], &["src/capture/cdp.rs"]);
+    forbid(&["screencapturekit"], &["src/capture/macos.rs"]);
+    forbid(
+        &["objc2_core_graphics"],
+        &["src/capture/macos.rs", "src/capture/tap.rs"],
+    );
 }
 
 #[test]
-fn rule_3_unsafe_only_in_four_files() {
+fn rule_3_unsafe_only_in_five_files() {
     forbid(
         &["unsafe"],
         &[
@@ -83,6 +88,7 @@ fn rule_3_unsafe_only_in_four_files() {
             "src/capture/hook.rs",
             "src/platform/windows.rs",
             "src/platform/unix.rs",
+            "src/capture/macos.rs",
         ],
     );
 }

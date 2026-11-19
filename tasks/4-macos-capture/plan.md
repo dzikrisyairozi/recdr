@@ -326,7 +326,7 @@ objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"       # added in Task 9
 ```
 
-When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features found in Task 4 (`default-features = false` plus what the compiler named): `objc2-core-graphics` needs `CGDirectDisplay` (`CGMainDisplayID`, and the test's display modes) and `CGWindow` (the screen permission) from Task 5, and `CGEvent` and `CGEventTypes` from Task 9; `objc2-core-foundation` needs `CFMachPort` and `CFRunLoop` from Task 9.
+When `native-mp4` was built first the table exists and may already hold `objc2-core-foundation`. The cargo features found in Task 4 (`default-features = false` plus what the compiler named): `objc2-core-graphics` needs `CGDirectDisplay` (`CGMainDisplayID`, and the test's display modes), `CGError` (the test's `CGGetActiveDisplayList`) and `CGWindow` (the screen permission) from Task 5, and `CGEvent` and `CGEventTypes` from Task 9; `objc2-core-foundation` needs `CFMachPort` and `CFRunLoop` from Task 9.
 
 ### `build.rs`
 

@@ -4,6 +4,8 @@ mod cdp;
 mod fake;
 #[cfg(windows)]
 mod hook;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(windows)]
 mod windows;
 
@@ -147,7 +149,19 @@ fn desktop_source(
     )?))
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn desktop_source(
+    _resolved: &ResolvedTarget,
+    _fps: u32,
+    _cursor: bool,
+    _clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Err(Error::CaptureFailed(
+        "recording is not built yet on macOS".into(),
+    ))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn desktop_source(
     _resolved: &ResolvedTarget,
     _fps: u32,
@@ -167,7 +181,12 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
     windows::list_windows()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    macos::list_windows()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     Err(Error::UnsupportedPlatform)
 }
@@ -177,7 +196,12 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     windows::list_monitors()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
+    macos::list_monitors()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     Err(Error::UnsupportedPlatform)
 }

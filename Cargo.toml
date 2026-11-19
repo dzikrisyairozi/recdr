@@ -36,6 +36,10 @@ windows = { version = "0.62", features = [
     "Win32_UI_HiDpi",
 ] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "11.1", features = ["macos_14_0"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGDirectDisplay", "CGError", "CGWindow"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
