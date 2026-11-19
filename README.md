@@ -242,7 +242,7 @@ Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_re
 - The tests check MP4 files by their headers and by decoding frames with ffmpeg. A Windows MP4 plays in Chrome and opens in the Windows media stack; QuickTime Player and Safari have not been checked yet.
 - The app needs Windows or macOS; on Linux `recdr gui` fails with `unsupported_platform`. It records a region or a window, not a monitor or a tab. A frame put around a window stays where it was put when the window moves.
 - On Windows 11 each of the app's four border windows has a thin gray outline and rounded ends drawn by the system, which egui cannot switch off.
-- The app on macOS has not been run yet, so how it behaves over full-screen applications there is not known.
+- On macOS, how the frame behaves over a full-screen application (which has its own Space) has not been tried.
 
 ## License
 

@@ -291,7 +291,8 @@ cargo test
 
 ## Phase 4: macOS, and the rest
 
-- [ ] **Task 14: the app on the Mac**
+- [x] **Task 14: the app on the Mac**
+  - 2026-11-20: run with the Accessibility API on macOS 26.6.2; results in `acceptance.md` and the plan. Fixed: transparent border windows (`dca5526`) and Quit during a recording (`62f369a`). Left for the owner: drags, clicks through the frame, the menu with the mouse, the full-screen limit.
   - Description: The same app on macOS 14 or later. Needs the owner's Mac.
   - Steps:
     - Run Task 9's program on the Mac and write the eight answers for macOS into the plan.

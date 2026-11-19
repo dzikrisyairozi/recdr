@@ -44,7 +44,15 @@ Found on the way: the outline the system draws for the undecorated shadow covers
 **macOS, 2026-11-20** (Task 14). Apple M5, one built-in display of 1512 by 982 points at scale 2, macOS 26.6.2, Xcode command line tools only. The app itself again, not a throwaway program.
 
 8. Size and build time: the release binary is 13.6 MB (with ScreenCaptureKit's Swift bridge and AVFoundation). A clean release build of the whole crate took 81 s. The same three `eframe` features build and link with no change.
-1 to 7: not yet run. The screen was locked while the build ran, so no window of the app could be seen or checked.
+1. Stay together while dragged: **not tried by drag**. Placed by the app (start, the target menu, the editor and back) the four border windows and the toolbar land where `geometry` says, at window level 3.
+2. A click in the middle reaches the application under it: **yes**, by the CoreGraphics window list: the front window at the center is the one under the frame.
+3. A transparent part of a border window: **not tried** (needs a click). The border windows were opaque black there until the main window asked for transparency too (below).
+4. Placing a window in pixels: the same calls as on Windows; at scale 2 positions land exactly (inside at 596, 371 points for 1192, 742 pixels). No second monitor at hand.
+5. The pointer during a drag: **not tried** (needs a drag).
+6. Strip to a decorated 960 by 640 window and back with `ViewportCommand` alone: **yes**. The editor is 960 x 672 points with its title bar at level 0; back to the toolbar at level 3.
+7. A combo box in an undecorated always-on-top window: **yes**, opened through Accessibility; the window grows by 240 points. An item chosen through Accessibility does not close the list.
+
+Found on the way: glow picks one pixel format for every window from the main window's `ViewportBuilder`; without `with_transparent(true)` there, the border windows drew black where transparent. And Quit from the Dock or menu ends the event loop with no close request, so `on_exit` stops a running recording.
 
 ## Architecture decisions
 
