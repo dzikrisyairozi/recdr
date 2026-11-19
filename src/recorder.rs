@@ -80,9 +80,13 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
-            Some(CaptureEvent::Frame(frame))
-                if source.paced() || elapsed_ms / interval_ms > last_slot =>
-            {
+            // A paced source sends its next frame only after this one is handed on, so
+            // it waits for the writer rather than lose a frame (cdp-capture criterion 4).
+            Some(CaptureEvent::Frame(frame)) if source.paced() => {
+                writer.push_waiting(frame, elapsed_ms)?;
+                last_slot = elapsed_ms / interval_ms;
+            }
+            Some(CaptureEvent::Frame(frame)) if elapsed_ms / interval_ms > last_slot => {
                 writer.push(frame, elapsed_ms)?;
                 last_slot = elapsed_ms / interval_ms;
             }
