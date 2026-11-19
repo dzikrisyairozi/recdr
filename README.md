@@ -1,12 +1,12 @@
 # recdr
 
-recdr records a window, a screen region or a monitor on Windows, or a browser tab through the Chrome DevTools Protocol on Windows, Linux and macOS, and leaves files an AI agent can read: a GIF or MP4 for people, and for the agent a contact sheet of the moments where the screen changed, a per-frame change log and the stored frames as PNG. Agents drive it through a CLI that prints JSON, or through an MCP server.
+recdr records a window, a screen region or a monitor on Windows and macOS, or a browser tab through the Chrome DevTools Protocol on Windows, Linux and macOS, and leaves files an AI agent can read: a GIF or MP4 for people, and for the agent a contact sheet of the moments where the screen changed, a per-frame change log and the stored frames as PNG. Agents drive it through a CLI that prints JSON, or through an MCP server.
 
 It exists because browser tools give an agent screenshots, not recordings. With recdr an agent can start a recording, run a test or click through a flow, stop, and look at what happened.
 
 ## Build
 
-Requires Rust 1.98 or later. Desktop targets (windows, regions, monitors) need Windows 10 1903 or later (Windows 11 recommended). Tab targets run on Windows, Linux and macOS and need a Chromium-based browser with remote debugging switched on.
+Requires Rust 1.98 or later. Desktop targets (windows, regions, monitors) need Windows 10 1903 or later (Windows 11 recommended) or macOS 14 or later. Building on macOS needs Xcode's command line tools (`xcode-select --install`); full Xcode is not needed. Tab targets run on Windows, Linux and macOS and need a Chromium-based browser with remote debugging switched on.
 
 ```
 cargo build --release
@@ -14,7 +14,18 @@ cargo build --release
 
 The binary is `target/release/recdr` (`recdr.exe` on Windows). MP4 output also needs `ffmpeg` on `PATH`.
 
-On Linux and macOS, `windows`, `monitors` and the desktop targets fail with `unsupported_platform`. A command after `--` runs without a shell there, so write `-- sh -c "npm test && echo done"` when you need one.
+On Linux, `windows`, `monitors` and the desktop targets fail with `unsupported_platform`. A command after `--` runs without a shell there, so write `-- sh -c "npm test && echo done"` when you need one.
+
+### macOS permissions
+
+macOS asks for two permissions, and gives them to the program that started recdr: your terminal (Terminal, iTerm2) or your editor, not recdr itself. A recording started with `start`, and one started by the MCP server, counts as that same program.
+
+- **Screen Recording** (System Settings > Privacy & Security > Screen & System Audio Recording), for `windows`, `monitors` and every desktop target. Without it recdr asks macOS to show its dialog and fails with `permission_denied`. Switch the program on and restart it.
+- **Input Monitoring** (System Settings > Privacy & Security > Input Monitoring), for click rings. Without it a recording still runs, without clicks, and prints `clicks are not recorded: ...` on stderr (for `start`, in `recorder.log`). `--no-click-highlight` asks for nothing.
+
+While a recording runs, macOS shows its screen-recording indicator in the menu bar. On macOS 15 and later the system may also show a periodic alert that the program is reading the screen without the system's window picker.
+
+On macOS, `minimized` in `recdr windows` is true for any window that is not on screen: minimized, hidden with its application, or on another Space. Such a window is refused with `target_minimized`. Positions are in pixels: each monitor's `bounds` origin is its position in points times the largest scale factor, so a Retina laptop with a 1x display has gaps between the monitors' `bounds`, and a position read off a frame plus the `bounds` origin is still a valid `--region` position.
 
 ## Commands
 
@@ -151,7 +162,8 @@ Clicks in a tab come from the page: recdr adds a listener for mouse presses to t
 | `too_many_frames` | `get_frames` would return more than 8 frames. |
 | `capture_failed` | The capture source failed. |
 | `encode_failed` | Writing the GIF or MP4 failed. |
-| `unsupported_platform` | `windows`, `monitors` or a desktop target on Linux or macOS. |
+| `unsupported_platform` | `windows`, `monitors` or a desktop target on Linux. |
+| `permission_denied` | macOS has not given the program that started recdr the Screen Recording permission. |
 | `cdp_connect_failed` | The browser cannot be reached, does not speak CDP, or did not answer within 30 seconds. |
 | `io_error` | A file or process operation failed. |
 
@@ -159,7 +171,7 @@ Clicks in a tab come from the page: recdr adds a listener for mouse presses to t
 
 ```
 cargo test
-cargo test --test desktop -- --ignored                       # Windows; records the real screen
+cargo test --test desktop -- --ignored --test-threads=1      # Windows and macOS; records the real screen
 cargo test --test browser -- --ignored --test-threads=1      # starts headless Chrome
 ```
 
@@ -195,6 +207,7 @@ Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_re
 - On Windows 10 the system draws a yellow border around the captured window or monitor, and it cannot be turned off there. Windows 11 turns it off.
 - Clicks in windows of elevated (administrator) processes are not seen by the mouse hook, so they get no ring. Security software may flag a program that hooks the mouse and captures the screen; `--no-click-highlight` installs no hook.
 - Protected video and some full-screen exclusive applications capture as black.
+- On macOS a window recorded while it is minimized or on another Space stores no frames for that time; the recording runs on. A resized window is scaled to fit the starting size and padded with black by macOS itself.
 - When a recorded window is resized, the first frame at the new size is discarded by the capture library. A window that then never repaints keeps showing its old image in the recording. Frames of another size are scaled to fit the first frame's size, on black.
 - A recording holds whatever was on screen, including secrets. recdr never uploads anything; recordings stay in the output root.
 - Keyboard input is never recorded.
