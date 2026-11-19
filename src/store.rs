@@ -305,26 +305,19 @@ impl WriterThread {
         Ok(())
     }
 
-    /// Waits until the writer has taken the frame before this one, then hands this one
-    /// over, so nothing is skipped. For a source that waits for recdr anyway: a browser
-    /// sends the next frame only after recdr acknowledges, so waiting here lowers the
-    /// frame rate instead of dropping a frame.
-    pub fn push_waiting(&mut self, frame: Frame, t_ms: u64) -> Result<()> {
-        {
-            let mut mailbox = self.shared.mailbox.lock().expect("frame writer lock");
-            while mailbox.waiting.is_some()
-                && !self.thread.as_ref().is_some_and(JoinHandle::is_finished)
-            {
-                // Timed, so a writer that ended on an error is noticed by `push`.
-                mailbox = self
-                    .shared
-                    .taken
-                    .wait_timeout(mailbox, std::time::Duration::from_millis(50))
-                    .expect("frame writer lock")
-                    .0;
-            }
-        }
-        self.push(frame, t_ms)
+    /// Waits up to `timeout` for the writer to take the waiting frame, and says whether
+    /// the next `push` will replace nothing. For a source that waits for recdr anyway: a
+    /// browser sends the next frame only after recdr acknowledges, so not reading from it
+    /// until this is true lowers the frame rate instead of dropping a frame.
+    pub fn wait_taken(&self, timeout: std::time::Duration) -> bool {
+        let mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+        let (mailbox, _) = self
+            .shared
+            .taken
+            .wait_timeout_while(mailbox, timeout, |mailbox| mailbox.waiting.is_some())
+            .expect("frame writer lock");
+        // A writer that ended on an error never takes the frame; `push` reports it.
+        mailbox.waiting.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished)
     }
 
     /// Bytes of the PNG files stored so far.
@@ -652,8 +645,9 @@ mod tests {
         first.push(solid(256, 256, [0, 0, 0, 255]), 0).unwrap();
         let mut writer = first.into_thread().unwrap();
         for i in 1..=20u8 {
+            while !writer.wait_taken(std::time::Duration::from_millis(5)) {}
             writer
-                .push_waiting(solid(256, 256, [i, 0, 0, 255]), u64::from(i))
+                .push(solid(256, 256, [i, 0, 0, 255]), u64::from(i))
                 .unwrap();
         }
         let (frames, skipped) = writer.finish().unwrap();
