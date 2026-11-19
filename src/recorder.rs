@@ -17,6 +17,7 @@ use crate::time;
 
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(50);
+const HOLD_POLL: Duration = Duration::from_millis(2);
 
 /// Runs the recording described by the directory's `state.json` until a stop
 /// condition holds, then writes every output.
@@ -80,8 +81,11 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         // writer still has a frame waiting the source keeps its frames, so the browser
         // waits and no frame is replaced (cdp-capture criterion 4); clicks and the tab's
         // end still arrive on time, and the loop still reaches the stop checks.
-        source.hold_frames(source.paced() && !writer.is_free());
-        let event = source.next_event(POLL)?;
+        // While holding, the source is asked again every few milliseconds, so a frame goes
+        // out as soon as the writer is free and not up to one POLL later.
+        let holding = source.paced() && !writer.is_free();
+        source.hold_frames(holding);
+        let event = source.next_event(if holding { HOLD_POLL } else { POLL })?;
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
