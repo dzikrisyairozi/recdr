@@ -27,6 +27,9 @@ pub trait CaptureSource {
     fn paced(&self) -> bool {
         false
     }
+    /// While true, a paced source keeps its frames and still reports clicks and its end.
+    /// It hands out no frame, so it acknowledges none, and the browser waits.
+    fn hold_frames(&mut self, _hold: bool) {}
 }
 
 /// `clicks` asks the source to report presses; the synthetic source ignores it.
