@@ -240,6 +240,105 @@ mod on_windows {
 #[cfg(target_os = "macos")]
 mod on_macos {
     use super::*;
+    use common::{Browser, serve, wait_for_window};
+
+    /// A Chrome application window showing `page`, titled `title(name)`, and its entry
+    /// in `recdr windows`.
+    fn test_window(name: &str, page: &str) -> (Browser, Value) {
+        let port = serve();
+        let browser = Browser::app(
+            name,
+            &format!("http://127.0.0.1:{port}/{page}#{}", title(name)),
+        );
+        let window = wait_for_window(&title(name));
+        (browser, window)
+    }
+
+    #[test]
+    #[ignore]
+    fn windows_lists_the_test_window() {
+        let (_browser, window) = test_window("list", "anim");
+        assert_eq!(window["title"], title("list"));
+        assert_eq!(window["minimized"], false);
+        assert_ne!(window["process"], "");
+        let pid = window["pid"].as_u64().unwrap().to_string();
+        let alive = std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .status()
+            .unwrap();
+        assert!(alive.success(), "kill -0 {pid}");
+    }
+
+    #[test]
+    #[ignore]
+    fn window_and_process_find_it_and_two_are_ambiguous() {
+        let (_one, _) = test_window("one", "anim");
+        let (_a, a) = test_window("two-a", "anim");
+        let (_b, b) = test_window("two-b", "anim");
+        let (code, err) = error(&record(
+            "two",
+            &["--window", &title("two"), "--duration", "1s"],
+        ));
+        assert_eq!(
+            (code, err["code"].as_str()),
+            (Some(1), Some("ambiguous_target"))
+        );
+        let mut ids: Vec<&Value> = err["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| &c["id"])
+            .collect();
+        ids.sort_by_key(|id| id.as_u64());
+        let mut expected = vec![&a["id"], &b["id"]];
+        expected.sort_by_key(|id| id.as_u64());
+        assert_eq!(ids, expected);
+        let missing = format!("no-such-window-{}", std::process::id());
+        let (code, err) = error(&record(
+            "missing",
+            &["--window", &missing, "--duration", "1s"],
+        ));
+        assert_eq!(
+            (code, err["code"].as_str()),
+            (Some(1), Some("target_not_found"))
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn minimized_window_is_listed_and_refused() {
+        let (browser, window) = test_window("min", "anim");
+        let mut client = browser.client();
+        let tab = client.tab_ids()[0].clone();
+        client.minimize(&tab);
+        let id = window["id"].as_u64().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let list = ok(&recdr().arg("windows").output().unwrap());
+            let entry = list["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|w| w["id"] == id)
+                .cloned();
+            if entry.as_ref().is_some_and(|w| w["minimized"] == true) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "not minimized: {entry:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        let (code, err) = error(&record(
+            "min",
+            &["--window-id", &id.to_string(), "--duration", "1s"],
+        ));
+        assert_eq!(
+            (code, err["code"].as_str()),
+            (Some(1), Some("target_minimized"))
+        );
+    }
 
     /// Criterion 1. Each display's size in pixels from CoreGraphics display modes,
     /// which ScreenCaptureKit does not use for this (`system_profiler` lists none on

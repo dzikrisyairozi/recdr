@@ -123,7 +123,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Files: `Cargo.toml`, `Cargo.lock`, `src/error.rs`, `src/capture/macos.rs`, `src/capture/mod.rs`, `tests/layers.rs`, `tests/tabs.rs`, `tests/desktop.rs`
   - Scope: M
 
-- [ ] **Task 6: `recdr windows` and the test window**
+- [x] **Task 6: `recdr windows` and the test window**
   - Description: Windows are listed in pixels, and the desktop tests get a window they control.
   - Steps:
     - `src/capture/macos.rs`: `listed` with a unit test, and `list_windows`.
@@ -141,7 +141,7 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Scope: M
 
 ### Checkpoint B: recdr sees the Mac's screen
-- [ ] `recdr monitors` and `recdr windows` print the Mac's displays and windows.
+- [x] `recdr monitors` and `recdr windows` print the Mac's displays and windows. (One display of 3024 by 1964 with `primary` true; 21 windows, 14 of them `minimized`. The four macOS desktop tests pass.)
 - [ ] The three CI jobs are green on the pull request.
 
 ## Phase 3: recording

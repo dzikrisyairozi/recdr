@@ -164,13 +164,16 @@ pub fn is_error(result: &Value) -> bool {
 pub const ANIMATION: &str = "<!doctype html><title>moving box</title>\
 <style>body{margin:0;background:#fff}#b{position:absolute;top:400px;left:0;\
 width:200px;height:200px;background:#f00}</style><div id=b></div>\
-<script>let x=0;const b=document.getElementById('b');\
+<script>if (location.hash) document.title = decodeURIComponent(location.hash.slice(1));\
+let x=0;const b=document.getElementById('b');\
 function f(){x=(x+4)%1000;b.style.left=x+'px';requestAnimationFrame(f)}\
 requestAnimationFrame(f)</script>";
 pub const STILL: &str = "<!doctype html><title>quiet page</title>\
-<style>body{margin:0;background:#fff}</style><h1>A page that does not change</h1>";
+<style>body{margin:0;background:#fff}</style><h1>A page that does not change</h1>\
+<script>if (location.hash) document.title = decodeURIComponent(location.hash.slice(1));</script>";
 pub const GREEN: &str = "<!doctype html><title>green</title>\
-<style>html,body{margin:0;height:100%;background:#00aa00}</style>";
+<style>html,body{margin:0;height:100%;background:#00aa00}</style>\
+<script>if (location.hash) document.title = decodeURIComponent(location.hash.slice(1));</script>";
 
 /// Serves the three test pages on 127.0.0.1, by path, and returns the port.
 pub fn serve() -> u16 {
@@ -239,28 +242,48 @@ impl Browser {
     /// Chrome on a CI runner has twice written no `DevToolsActivePort` within 20 s; a
     /// start that hangs is ended and tried once more.
     pub fn start(name: &str, extra: &[&str]) -> Browser {
-        Self::try_start(name, extra).unwrap_or_else(|| {
+        let mut args: Vec<String> = [
+            "--headless=new",
+            "--remote-debugging-port=0",
+            "--window-size=1280,720",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        .iter()
+        .chain(extra)
+        .map(|a| a.to_string())
+        .collect();
+        args.push("about:blank".into());
+        Self::launch(name, args)
+    }
+
+    /// Chrome showing one page as an application window of 800 by 600 points.
+    pub fn app(name: &str, url: &str) -> Browser {
+        let args = [
+            format!("--app={url}"),
+            "--window-size=800,600".into(),
+            "--remote-debugging-port=0".into(),
+            "--no-first-run".into(),
+            "--no-default-browser-check".into(),
+        ];
+        Self::launch(name, args.into())
+    }
+
+    fn launch(name: &str, args: Vec<String>) -> Browser {
+        Self::try_launch(name, &args).unwrap_or_else(|| {
             eprintln!("Chrome wrote no DevToolsActivePort in 20 s; starting it again");
-            Self::try_start(name, extra).expect("Chrome wrote no DevToolsActivePort, twice")
+            Self::try_launch(name, &args).expect("Chrome wrote no DevToolsActivePort, twice")
         })
     }
 
-    fn try_start(name: &str, extra: &[&str]) -> Option<Browser> {
+    fn try_launch(name: &str, args: &[String]) -> Option<Browser> {
         let dir = std::env::temp_dir().join(format!("recdr-browser-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut command = Command::new(chrome_path());
         command
-            .arg("--headless=new")
-            .arg("--remote-debugging-port=0")
             .arg(format!("--user-data-dir={}", dir.display()))
-            .args([
-                "--window-size=1280,720",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ])
-            .args(extra)
-            .arg("about:blank")
+            .args(args)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         if std::env::var_os("CI").is_some() {
@@ -387,6 +410,32 @@ impl Client {
             self.call("Input.dispatchMouseEvent", event, Some(session));
         }
         sent
+    }
+
+    /// Minimizes the browser window that holds this tab.
+    pub fn minimize(&mut self, tab: &str) {
+        let window = self.call(
+            "Browser.getWindowForTarget",
+            json!({ "targetId": tab }),
+            None,
+        );
+        let bounds =
+            json!({ "windowId": window["windowId"], "bounds": { "windowState": "minimized" } });
+        self.call("Browser.setWindowBounds", bounds, None);
+    }
+
+    /// The width and height of the browser window that holds this tab, in points.
+    pub fn window_size(&mut self, tab: &str) -> (f64, f64) {
+        let window = self.call(
+            "Browser.getWindowForTarget",
+            json!({ "targetId": tab }),
+            None,
+        );
+        let bounds = &window["bounds"];
+        (
+            bounds["width"].as_f64().unwrap(),
+            bounds["height"].as_f64().unwrap(),
+        )
     }
 
     /// Ids of the page targets, in the browser's order.
