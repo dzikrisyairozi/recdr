@@ -191,7 +191,8 @@ cargo test
 
 ## Phase 3: the windows part, on Windows
 
-- [ ] **Task 9: try the windows, and write the results into this plan**
+- [x] **Task 9: try the windows, and write the results into this plan**
+  - 2026-11-19: answered on the app itself instead of a throwaway program; the eight answers are in the plan's "What was measured". 2 and 6 are yes, 3 is "the grip takes the press", 4 is answered with a 1-pixel correction for the outer corner, 8 is 11.9 MB and glow. 1, 5 and 7 need a drag or a click and are left for the owner; 7 led to the toolbar growing while the menu is open. None is a no, so the build did not stop (decision 8). Found: a gray system outline around each border window that egui cannot switch off on Windows; for the owner.
   - Description: A throwaway cargo project with `eframe` 0.37, in a directory outside the repository. Nothing from it is committed.
   - Steps: the program shows four border windows around a 640 by 480 area and a toolbar window under it, and is used to answer, on the development machine:
     1. Do the four windows stay together while the area is moved and resized by dragging, and stay above other windows?
@@ -213,6 +214,7 @@ cargo test
   - Scope: S
 
 - [ ] **Task 10: the app opens, with a toolbar that can record and stop**
+  - 2026-11-19: code done with Tasks 11 to 13 in one commit (the windows part was written whole from the contracts). Checked on Windows, see `acceptance.md`: on top, 640 x 480, Record/Stop and status (15), terminal stop (18), close while recording and the exit codes (22), the switches reach the request (23), layers pass, clippy clean for macOS and Linux. Left: the cursor half of 23 with the pointer inside the frame.
   - Description: `recdr gui` opens one window on Windows and macOS: the toolbar, always on top. The whole loop from input to `state::step` to `worker::perform` and back runs. No frame is drawn yet, so a recording made now is of the starting region.
   - Steps:
     - `Cargo.toml`, `Cargo.lock`: `eframe` and `rfd`.
@@ -235,6 +237,7 @@ cargo test
   - Scope: M (eight files, because the three files of the windows part must appear together; `Cargo.lock` is generated, and the two test files change by one line each)
 
 - [ ] **Task 11: the frame**
+  - 2026-11-19: code done. Checked: inside equals the toolbar's size to the pixel (11), center click goes through (13), stored frames have the toolbar's size and no border pixel (16). Left for the owner: every drag (12), the target menu and window placement (14).
   - Description: The four border windows, moving and resizing, and the target menu placing the frame.
   - Steps:
     - `src/gui/overlay.rs`: the border windows in `Idle`, the drags of Contracts, and the toolbar following the frame.
@@ -251,6 +254,7 @@ cargo test
   - Scope: M
 
 - [ ] **Task 12: the look of a recording**
+  - 2026-11-19: code done. Checked: red line and the seconds counter (17); border windows pass presses through while recording. Left for the owner: that a drag does nothing, the maximized-window case (14), the closed-window message.
   - Description: What the person sees while it records.
   - Steps:
     - `src/gui/overlay.rs`: in `Recording` the border windows are red and take no drag; the toolbar shows the elapsed time.
@@ -265,6 +269,7 @@ cargo test
   - Scope: S
 
 - [ ] **Task 13: the editor**
+  - 2026-11-19: code done. Checked: Play shows motion and swaps to Pause, Save GIF equals `recdr export` byte for byte, Save MP4 matches it, "exporting" and disabled buttons during an export, New recording returns and keeps the directory. Left for the owner: timeline drags, handles, the crop rectangle, a trimmed and cropped save, Space, and the MP4 error case (the save dialog would not take an unwritable folder).
   - Description: Preview, trim, crop and save.
   - Steps:
     - `src/gui/editor.rs`: `show` as in Contracts.

@@ -85,6 +85,10 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
         ],
         &["src/encode/avf.rs"],
     );
+    forbid(
+        &["eframe", "egui", "rfd::"],
+        &["src/gui/app.rs", "src/gui/overlay.rs", "src/gui/editor.rs"],
+    );
 }
 
 #[test]
@@ -164,6 +168,7 @@ fn rule_6_system_differences_only_in_four_files() {
         "src/platform/mod.rs",
         "src/lib.rs",
         "src/encode/mod.rs",
+        "src/gui/mod.rs",
     ];
     for (path, code) in source_files() {
         if allowed.contains(&path.as_str()) {

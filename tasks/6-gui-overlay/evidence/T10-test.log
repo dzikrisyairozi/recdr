@@ -1,0 +1,30 @@
+﻿> cargo test
+     Running unittests src\lib.rs (target\debug\deps\recdr-2d8219c516ef3393.exe)
+test result: ok. 120 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 7.49s
+     Running unittests src\main.rs (target\debug\deps\recdr-db301de1bf50ed55.exe)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\browser.rs (target\debug\deps\browser-09f365e83b4e82ed.exe)
+test result: ok. 0 passed; 0 failed; 17 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\cli.rs (target\debug\deps\cli-154887565a417290.exe)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+     Running tests\control.rs (target\debug\deps\control-6191cb4725da6624.exe)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.37s
+     Running tests\desktop.rs (target\debug\deps\desktop-9d45d0ffab6a773d.exe)
+test result: ok. 0 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\export.rs (target\debug\deps\export-6abd625aa2613ba5.exe)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.57s
+     Running tests\frames.rs (target\debug\deps\frames-946dfe9b158aa7a0.exe)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.08s
+     Running tests\gui.rs (target\debug\deps\gui-e70ef78f685996f8.exe)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running tests\layers.rs (target\debug\deps\layers-9b16c49c9ed31d5e.exe)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running tests\mcp.rs (target\debug\deps\mcp-67a84444faae4cf6.exe)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+     Running tests\record.rs (target\debug\deps\record-1cffd77831f70164.exe)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.44s
+     Running tests\tabs.rs (target\debug\deps\tabs-bbcc9df3a4954970.exe)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.31s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit code: 0
+

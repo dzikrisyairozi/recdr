@@ -36,6 +36,10 @@ windows = { version = "0.62", features = [
     "Win32_UI_HiDpi",
 ] }
 
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
+rfd = "0.18"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

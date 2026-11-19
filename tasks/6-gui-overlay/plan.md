@@ -28,6 +28,19 @@ Checked by reading the files on branch `feat/1-agent-recorder`: `src/model.rs`, 
 
 Nothing was run for this plan. The spec's "What was checked" lists what was read from `egui` 0.37.0. Task 9 runs a throwaway window on Windows, Task 14 runs it on the Mac, and both write their results here.
 
+**Windows, 2026-11-19** (Task 9). Windows 11 Home 10.0.26200, three 1920 by 1080 monitors at scale 1. No throwaway program was written: the app of Tasks 10 to 13 was built straight from the contracts and each question was answered on it. The agent that ran this may not move the pointer or press keys on the owner's desktop, so it read window rectangles and the window under a point with `GetClientRect`, `ClientToScreen` and `WindowFromPoint`, compared screenshots, and pressed the app's buttons through UI Automation (egui's AccessKit tree), which sends no input.
+
+1. Stay together while dragged: **not tried by drag** (needs the pointer). Moved by the app itself (Record, the editor and back) the four border windows and the toolbar land where `geometry` says, to the pixel, and all five are `WS_EX_TOPMOST`. Left for the owner.
+2. A click in the middle reaches the application under it: **yes**. `WindowFromPoint` at the frame's center returns the window under the frame; nothing of recdr covers the inside.
+3. A transparent part of a border window: **takes the press**. `WindowFromPoint` on the transparent pixels of a border window returns that border window, so the whole 8-pixel grip catches the mouse. Only `with_mouse_passthrough(true)`, used while recording, lets presses through.
+4. Placing a window at a position in pixels: `ViewportBuilder::with_position` and `ViewportCommand::OuterPosition` take points, which egui-winit multiplies by the window's pixels per point (`egui-winit` lib.rs, the `OuterPosition` arm), so `geometry::to_points(pixels, scale)` is the argument. Both set the *outer* corner. An undecorated window's inside starts 1 pixel lower (egui-winit turns on the system's "undecorated shadow" for every undecorated window on Windows), so each window is placed by `inner_rect.min - outer_rect.min` of the main window up and left of its target; with that, every window's inside is exactly where `geometry` puts it. Not tried on a second monitor with another scale factor: all three monitors here are at scale 1.
+5. The pointer's position on the screen during a drag: `input.viewport().inner_rect.min + input.pointer.latest_pos()`, times `ctx.pixels_per_point()`. **Not tried during a drag.** Left for the owner, with the risk that the window moves before the pointer event of the same pass arrives.
+6. Bare always-on-top strip to a decorated 960 by 640 window and back with `ViewportCommand` alone: **yes**. `Decorations`, `Resizable`, `WindowLevel` and `InnerSize`, then `OuterPosition` to center the editor on the frame's monitor (it otherwise keeps the toolbar's corner and runs off the screen). Back in the overlay the toolbar returns to the same pixel.
+7. A combo box in an undecorated always-on-top window: **not tried by click**. egui keeps a popup inside its window (`Area` constrains to `Context::content_rect`, `area.rs:477`), so in a 40-point toolbar the list would get 40 points. The toolbar window therefore grows by 240 points while `ComboBox::is_open` is true, downward when the monitor has room and upward otherwise. UI Automation lists the combo box's ExpandCollapse pattern but refuses to return it, so the opening is left for the owner.
+8. Size and build time: the release binary is 11.9 MB. The first debug build with `eframe` and its default features (wgpu) took 294 s; switching to glow took 220 s; the first release build 134 s. The features are `glow`, `default_fonts` and `accesskit`. wgpu was dropped because its border windows drew black where they should be transparent on this machine; glow gives real transparency (screenshots before and after the app opened match outside the drawn line).
+
+Found on the way: the outline the system draws for the undecorated shadow covers the outermost 1 or 2 pixels of every undecorated window and draws a thin gray edge with rounded corners around each border window. egui offers no way to turn the shadow off on Windows (`want_undecorated_shadow` in egui-winit), and a system call is a change to the spec first (decision 8). The line is drawn 2 pixels away from the recorded area, inside the visible part of each border window, and the gray edges stay. For the owner to decide whether that is acceptable.
+
 ## Architecture decisions
 
 Each is a choice the spec left to the plan.
@@ -506,6 +519,17 @@ pub fn show(ctx: &egui::Context, app: &state::App, picture: Option<&egui::Textur
 - `app.rs` loads a new `picture` path with `image::open`, turns it into an `egui::ColorImage` with `from_rgba_unmultiplied`, and keeps the texture until the path changes.
 - No file of the windows part decides what to do to recdr: each only turns input into events and draws `state::App`.
 
+What Task 9 found and Tasks 10 to 13 used, on Windows:
+
+- `eframe` 0.37 calls `App::ui(&mut self, ui: &mut egui::Ui, frame)` instead of `update`, so `overlay::show` and `editor::show` take that `&mut egui::Ui` in place of the `&egui::Context` above.
+- The main window starts with `ViewportBuilder::default().with_title("recdr").with_decorations(false).with_always_on_top().with_resizable(false).with_inner_size(TOOLBAR_POINTS)`. `App::clear_color` is fully transparent, so the border windows show only their line; the toolbar and the editor paint `panel_fill` over the whole window.
+- A border window is `show_viewport_immediate` with `with_decorations(false)`, `with_transparent(true)`, `with_always_on_top()`, `with_resizable(false)`, `with_taskbar(false)`, `with_mouse_passthrough(recording)`, `with_position` and `with_inner_size`. egui sends `OuterPosition` and `InnerSize` itself when the builder's values change.
+- Every window is placed by its outer corner, less the main window's `inner_rect.min - outer_rect.min` (answer 4).
+- The line is drawn 2 pixels away from the recorded area (`GAP` in `overlay.rs`), because the system's outline covers the outermost pixels of each border window.
+- The toolbar is moved with `ViewportCommand::OuterPosition` and sized with `InnerSize` whenever the window's real `outer_rect` or `inner_rect` differs from where it should be, and it grows by 240 points while the target menu is open (answer 7).
+- On entering the editor: `Decorations(true)`, `Resizable(true)`, `WindowLevel(Normal)`, `InnerSize(960, 640)` and `OuterPosition` centering it on the frame's monitor; on leaving, the reverse, and the overlay puts the toolbar back.
+- Ids for `egui`'s temporary memory are made with `Id::unique`; `Id::new` is deprecated in 0.37.
+
 ### `tests/layers.rs`
 
 Starting from the layer tests as they are after `native-mp4`:
@@ -530,6 +554,8 @@ rfd = "0.18"
 ```
 
 Task 9 writes down the cargo features of `eframe` that are needed, and turns the default ones off where the app does not use them.
+
+As built: `eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "accesskit"] }` and `rfd = "0.18"`. glow in place of the default wgpu, because wgpu drew the transparent border windows black on Windows (answer 8); `accesskit` because it is how a screen reader, and the checks of Tasks 10 to 13, reach the buttons.
 
 ## File boundary
 
