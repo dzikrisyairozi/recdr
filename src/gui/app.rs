@@ -21,6 +21,9 @@ pub fn run(out: PathBuf) -> Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title("recdr")
             .with_decorations(false)
+            // glow picks one pixel format for every window from this one; without
+            // alpha the border windows draw black where they are transparent (macOS).
+            .with_transparent(true)
             .with_always_on_top()
             .with_resizable(false)
             .with_inner_size([TOOLBAR_POINTS.0 as f32, TOOLBAR_POINTS.1 as f32]),
