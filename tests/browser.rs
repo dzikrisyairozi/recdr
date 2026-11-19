@@ -92,7 +92,16 @@ struct Browser {
 
 impl Browser {
     /// Headless Chrome with a fresh user data directory and these extra arguments.
+    /// Chrome on a CI runner has twice written no `DevToolsActivePort` within 20 s; a
+    /// start that hangs is ended and tried once more.
     fn start(name: &str, extra: &[&str]) -> Browser {
+        Self::try_start(name, extra).unwrap_or_else(|| {
+            eprintln!("Chrome wrote no DevToolsActivePort in 20 s; starting it again");
+            Self::try_start(name, extra).expect("Chrome wrote no DevToolsActivePort, twice")
+        })
+    }
+
+    fn try_start(name: &str, extra: &[&str]) -> Option<Browser> {
         let dir = std::env::temp_dir().join(format!("recdr-browser-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -127,13 +136,13 @@ impl Browser {
             if let [port, _path] = text.lines().collect::<Vec<_>>()[..] {
                 break port.parse().unwrap();
             }
-            assert!(
-                Instant::now() < deadline,
-                "Chrome wrote no DevToolsActivePort"
-            );
+            if Instant::now() >= deadline {
+                // Dropping the browser ends Chrome and removes its directory.
+                return None;
+            }
             std::thread::sleep(Duration::from_millis(100));
         };
-        browser
+        Some(browser)
     }
 
     fn port_file(&self) -> PathBuf {
