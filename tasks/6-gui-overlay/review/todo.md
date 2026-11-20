@@ -38,7 +38,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: `crate::time` and aliased imports in `src/gui/` fail the test; `std::time` passes
   - Verify: `rtk proxy cargo test --test layers`
   - Files: tests/layers.rs
-- [ ] Task 7: Decode previews off the UI thread
+- [x] Task 7: Decode previews off the UI thread
   - Finding: Suggestion — src/gui/app.rs:133
   - Acceptance: `ui()` no longer calls `image::open`
   - Verify: manual playback of a 1080p recording

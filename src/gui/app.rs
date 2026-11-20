@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use eframe::egui;
@@ -53,6 +54,8 @@ struct Gui {
     receiver: Receiver<Event>,
     /// The picture on show and the stored frame it came from.
     picture: Option<(PathBuf, egui::TextureHandle)>,
+    /// The last preview frame, decoded on its worker thread so the UI thread only uploads it.
+    decoded: Arc<Mutex<Option<(PathBuf, egui::ColorImage)>>>,
     quitting: bool,
     /// Whether the main window is dressed as the editor; None before the first pass.
     dressed_as_editor: Option<bool>,
@@ -66,6 +69,7 @@ impl Gui {
             sender,
             receiver,
             picture: None,
+            decoded: Arc::default(),
             quitting: false,
             dressed_as_editor: None,
         }
@@ -76,8 +80,20 @@ impl Gui {
             return;
         }
         let (out, sender, ctx) = (self.app.out.clone(), self.sender.clone(), ctx.clone());
+        let decoded = Arc::clone(&self.decoded);
         std::thread::spawn(move || {
-            if let Some(event) = perform_caught(&out, action) {
+            let event = perform_caught(&out, action);
+            // A frame that cannot be read leaves the last picture on show.
+            if let Some(Event::Picture { path, .. }) = &event
+                && let Ok(image) = image::open(path)
+            {
+                let rgba = image.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let color = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                *decoded.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some((path.clone(), color));
+            }
+            if let Some(event) = event {
                 // The receiver is gone only when the app has closed.
                 let _ = sender.send(event);
                 ctx.request_repaint();
@@ -133,13 +149,12 @@ impl Gui {
         {
             return;
         }
-        // A frame that cannot be read leaves the last picture on show.
-        if let Ok(image) = image::open(path) {
-            let rgba = image.to_rgba8();
-            let size = [rgba.width() as usize, rgba.height() as usize];
-            let color = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+        let mut decoded = self.decoded.lock().unwrap_or_else(PoisonError::into_inner);
+        if decoded.as_ref().is_some_and(|(done, _)| done == path)
+            && let Some((done, color)) = decoded.take()
+        {
             let texture = ctx.load_texture("picture", color, egui::TextureOptions::LINEAR);
-            self.picture = Some((path.clone(), texture));
+            self.picture = Some((done, texture));
         }
     }
 }
