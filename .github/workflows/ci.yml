@@ -28,13 +28,14 @@ jobs:
         run: brew install ffmpeg
       # One test at a time: the recording tests measure frame rates, and the macOS
       # runner's three cores cannot keep sixteen parallel recorders at 15 fps.
-      - run: cargo test -- --test-threads=1
+      - run: cargo test -- --test-threads=1 --show-output
       # Headless Chrome, which every runner image has. One at a time for the same reason.
-      - run: cargo test --test browser -- --ignored --test-threads=1
+      - run: cargo test --test browser -- --ignored --test-threads=1 --show-output
       # The desktop tests record the runner's screen; Task 4 of macos-capture showed a
       # ScreenCaptureKit stream delivers frames on the hosted macOS runner.
       # It runs after a failed browser step too, so one does not hide the other's result.
       - if: runner.os == 'macOS' && !cancelled()
         # The green region test is skipped here by the owner's decision: on the runner the
         # screen itself shows the page pale at that point (acceptance.md, criterion 5).
-        run: cargo test --test desktop -- --ignored --test-threads=1 --skip region_inside_the_green_page_is_green
+        # region_recording_is_the_region_size still checks that criterion's 400x300 size.
+        run: cargo test --test desktop -- --ignored --test-threads=1 --show-output --skip region_inside_the_green_page_is_green

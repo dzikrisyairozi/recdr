@@ -189,7 +189,7 @@ The conversion from points to pixels and the click filter take plain numbers and
 The layer rules are the ones in the `cdp-capture` spec, checked by `tests/layers.rs`. Changes:
 
 - `unsafe` may also appear in `capture/macos.rs` and `capture/tap.rs`.
-- New: `screencapturekit` appears only in `capture/macos.rs`. `objc2_core_graphics` appears only in `capture/macos.rs` (the Screen Recording check) and `capture/tap.rs`. `objc2_core_foundation` appears only in `capture/tap.rs`.
+- New: `screencapturekit` appears only in `capture/macos.rs`. `objc2_core_graphics` appears only in `capture/macos.rs` (the Screen Recording check) and `capture/tap.rs`. `objc2_core_foundation` appears only in `capture/macos.rs` (its CoreGraphics calls take Core Foundation types) and `capture/tap.rs` (the run loop).
 - The rule that system differences are decided only in `capture/mod.rs`, `platform/mod.rs` and `lib.rs` stays as it is.
 
 ## Code style
@@ -208,17 +208,19 @@ As in the first spec. One addition: every `unsafe` block in the two new files ha
 
 The test window on macOS is a Chrome window with a known title and known pixels. The browser tests of `cdp-capture` (`tests/browser.rs`) have what is needed: a small HTTP server on 127.0.0.1 that serves three pages, and a client that sends CDP commands to a test browser. Both move to `tests/common/mod.rs` so the desktop tests can use them. The pages are:
 
+A page whose URL has a fragment takes the fragment as its title, which is how each test names its window.
+
 | Path | Title | What it shows |
 |---|---|---|
-| `/anim` | `anim` | A white page with a red box that moves on every animation frame |
-| `/still` | `still` | A white page with one heading, which never changes |
+| `/anim` | `moving box` | A white page with a red box that moves on every animation frame |
+| `/still` | `quiet page` | A white page with one heading, which never changes |
 | `/green` | `green` | A page filled with the color `#00aa00` |
 
 A desktop test starts Chrome with `--app=http://127.0.0.1:<port>/<page>`, a temporary `--user-data-dir`, `--window-size=800,600` and `--remote-debugging-port=0`. It minimizes the window with the CDP command `Browser.setWindowBounds`, and closes it by ending the Chrome process it started. Neither needs a macOS permission. Chrome's path comes from `RECDR_TEST_CHROME`, as in the browser tests. On Windows the test window stays what it is today.
 
 No test sends a mouse press, as in the `cdp-capture` spec: an injected press lands on whatever is under the pointer. The click filter and the conversion have unit tests, and one real click is checked by hand.
 
-CI runs the macOS desktop tests on `macos-latest` if the plan's first task shows that a stream delivers frames there. If it does not, they run only on the owner's Mac, and the plan says so.
+CI runs the macOS desktop tests on `macos-latest` if the plan's first task shows that a stream delivers frames there. If it does not, they run only on the owner's Mac, and the plan says so. The plan's first task showed that it does, so CI runs them, with one test skipped: `region_inside_the_green_page_is_green`, because on the runner the screen itself shows the page pale at that point. `region_recording_is_the_region_size` still checks criterion 5's 400x300 there.
 
 ## Boundaries
 
@@ -278,7 +280,7 @@ A "test window" is the Chrome window described under Testing strategy, 800 by 60
 
 1. `recdr monitors` prints at least one monitor, exactly one of them with `primary` true, and each `bounds` size equals that display's size in points times its scale factor.
 2. `recdr windows` lists the test window with its title, `minimized` false, a `pid` that is a running process, and a `process` equal to the application name of the Chrome the test started.
-3. `recdr record --window-id <id> --duration 3s` exits 0 and writes a GIF between 2.5 and 3.5 seconds long with at least 20 stored frames, whose size is the test window's content size in points times the scale factor.
+3. `recdr record --window-id <id> --duration 3s` exits 0, writes a GIF, and reports a `duration_ms` between 2500 and 3500 with at least 20 stored frames, whose size is the test window's content size in points times the scale factor.
 4. `--window <text>` and `--process <the test Chrome's application name>` find the test window; two test windows with matching titles give `ambiguous_target` listing both; no match gives `target_not_found`.
 5. With the test window showing `/green`: `recdr record --region x,y,400,300 --duration 2s`, where the region is centered on the window's `bounds`, stores frames of exactly 400 by 300 pixels, and the center pixel of each is green (its green value is more than twice its red and its blue).
 6. `recdr record --monitor 0 --duration 2s` stores frames whose size equals the monitor's `bounds` size.

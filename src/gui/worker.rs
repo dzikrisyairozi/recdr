@@ -31,7 +31,7 @@ pub fn perform(out: &Path, action: Action) -> Option<Event> {
             duration_ms: result.duration_ms,
         }),
         Action::Preview { id, t_ms } => {
-            control::frames(out, &id, &FrameSelection::At(vec![t_ms]), None).map(|list| {
+            control::frames(out, &id, &FrameSelection::At(vec![t_ms]), None, None).map(|list| {
                 list.frames.into_iter().next().map_or_else(
                     || Event::Failed(format!("recording {id} has no stored frame")),
                     |frame| Event::Picture {

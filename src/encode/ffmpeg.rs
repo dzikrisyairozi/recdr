@@ -63,13 +63,17 @@ impl Writer {
 
         // Read stderr on its own thread so a chatty ffmpeg cannot block on a full pipe
         // while we block writing its stdin.
-        let mut stderr = child.stderr.take().expect("stderr is piped");
+        let (Some(mut stderr), Some(stdin)) = (child.stderr.take(), child.stdin.take()) else {
+            let _ = child.kill();
+            return Err(Error::EncodeFailed(
+                "ffmpeg started without its pipes".into(),
+            ));
+        };
         let errors = thread::spawn(move || {
             let mut text = String::new();
             let _ = stderr.read_to_string(&mut text);
             text
         });
-        let stdin = child.stdin.take().expect("stdin is piped");
         Ok(Self {
             child,
             stdin,
@@ -78,8 +82,9 @@ impl Writer {
         })
     }
 
-    /// Adds video frame `k`. Frames arrive in order, starting at 0.
-    pub fn push(&mut self, _k: u64, image: &RgbaImage) -> Result<()> {
+    /// Adds video frame `k`. Frames arrive in order, starting at 0. ffmpeg takes every
+    /// frame's bytes, so `changed` saves nothing here.
+    pub fn push(&mut self, _k: u64, image: &RgbaImage, _changed: bool) -> Result<()> {
         if !self.broken && self.stdin.write_all(image.as_raw()).is_err() {
             self.broken = true;
         }

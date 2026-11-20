@@ -26,12 +26,26 @@ pub fn encode(
     for piece in timeline(manifest) {
         let mut rgba = render(dir, &piece, crop)?.into_raw();
         let mut frame = Frame::from_rgba_speed(width, height, &mut rgba, 10);
-        // GIF delays are in hundredths of a second; browsers treat under 2 as 10.
-        frame.delay = ((piece.duration_ms + 5) / 10).max(2) as u16;
-        encoder.write_frame(&frame).map_err(failed)?;
-        count += 1;
+        for delay in delays(piece.duration_ms) {
+            frame.delay = delay;
+            encoder.write_frame(&frame).map_err(failed)?;
+            count += 1;
+        }
     }
     Ok(count)
+}
+
+/// GIF delays for a picture shown `duration_ms`: hundredths of a second, at least 2
+/// (browsers treat less as 10), and split where one would pass the u16 a frame holds.
+fn delays(duration_ms: u64) -> Vec<u16> {
+    let mut left = ((duration_ms + 5) / 10).max(2);
+    let mut out = Vec::new();
+    while left > 0 {
+        let delay = left.min(u64::from(u16::MAX));
+        out.push(delay as u16);
+        left -= delay;
+    }
+    out
 }
 
 fn gif_side(pixels: u32) -> Result<u16> {
@@ -54,6 +68,15 @@ mod tests {
             count += 1;
         }
         count
+    }
+
+    #[test]
+    fn a_long_still_picture_keeps_its_length() {
+        assert_eq!(delays(40), [4]);
+        assert_eq!(delays(3), [2]);
+        let long = delays(900_000);
+        assert_eq!(long.iter().map(|&d| u64::from(d)).sum::<u64>(), 90_000);
+        assert!(long.len() == 2);
     }
 
     #[test]

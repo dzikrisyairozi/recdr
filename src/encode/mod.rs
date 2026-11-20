@@ -63,10 +63,14 @@ pub fn check_mp4() -> Result<()> {
 /// a one-frame video is written to the temporary directory with the system encoder.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn check_mp4() -> Result<()> {
-    let path = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
+    // A name per call: MCP calls run on their own threads, and two checks sharing a
+    // file break each other.
+    static TRIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = TRIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("recdr-check-{}-{n}.mp4", std::process::id()));
     let black = RgbaImage::from_pixel(160, 120, image::Rgba([0, 0, 0, 255]));
     let trial = Writer::create(&path, 160, 120, 1, 1_000_000).and_then(|mut writer| {
-        let pushed = writer.push(0, &black);
+        let pushed = writer.push(0, &black, true);
         let finished = writer.finish();
         pushed.and(finished)
     });
@@ -94,7 +98,9 @@ fn write(dir: &RecordingDir, manifest: &Manifest, crop: Option<&Rect>, path: &Pa
     let (width, height) = video_size(manifest.width, manifest.height);
     let fps = manifest.fps.max(1);
     let mut writer = Writer::create(path, width, height, fps, bit_rate(width, height, fps))?;
-    let pushed = video_frames(dir, manifest, crop, |k, image| writer.push(k, image));
+    let pushed = video_frames(dir, manifest, crop, |k, image, changed| {
+        writer.push(k, image, changed)
+    });
     // Always finished, so the encoder lets go of the file before `mp4` removes it.
     let finished = writer.finish();
     pushed.and_then(|count| finished.map(|()| count))
@@ -180,7 +186,7 @@ fn video_frames(
     dir: &RecordingDir,
     manifest: &Manifest,
     crop: Option<&Rect>,
-    mut each: impl FnMut(u64, &RgbaImage) -> Result<()>,
+    mut each: impl FnMut(u64, &RgbaImage, bool) -> Result<()>,
 ) -> Result<u64> {
     let pieces = timeline(manifest);
     if pieces.is_empty() {
@@ -192,10 +198,13 @@ fn video_frames(
     for k in 0..frames {
         let t_ms = k * 1000 / fps;
         let at = pieces.iter().rposition(|p| p.t_ms <= t_ms).unwrap_or(0);
-        if shown.as_ref().is_none_or(|(i, _)| *i != at) {
+        let changed = shown.as_ref().is_none_or(|(i, _)| *i != at);
+        if changed {
             shown = Some((at, padded(render(dir, &pieces[at], crop)?)));
         }
-        each(k, &shown.as_ref().expect("set above").1)?;
+        if let Some((_, image)) = &shown {
+            each(k, image, changed)?;
+        }
     }
     Ok(frames)
 }
@@ -321,7 +330,7 @@ mod tests {
 
     fn calls(dir: &RecordingDir, manifest: &Manifest) -> Vec<u64> {
         let mut seen = Vec::new();
-        let count = video_frames(dir, manifest, None, |k, _| {
+        let count = video_frames(dir, manifest, None, |k, _, _| {
             seen.push(k);
             Ok(())
         })
@@ -360,12 +369,16 @@ mod tests {
         assert_eq!(manifest.frames.len(), 2);
 
         let mut shades = Vec::new();
-        video_frames(&dir, &manifest, None, |_, image| {
+        let mut changes = Vec::new();
+        video_frames(&dir, &manifest, None, |_, image, changed| {
             shades.push(image.get_pixel(0, 0)[0]);
+            changes.push(changed);
             Ok(())
         })
         .unwrap();
         assert_eq!(shades, [0, 0, 0, 255, 255]);
+        // A writer converts the picture only when it is a new one.
+        assert_eq!(changes, [true, false, false, true, false]);
     }
 
     #[test]
@@ -565,10 +578,72 @@ mod tests {
         assert!(at(240, 60)[1] > 200, "inside the ring is {:?}", at(240, 60));
     }
 
+    /// A box: big-endian size, name, content.
+    fn mp4_box(name: &[u8; 4], content: &[u8]) -> Vec<u8> {
+        let mut out = u32::try_from(content.len() + 8)
+            .unwrap()
+            .to_be_bytes()
+            .to_vec();
+        out.extend_from_slice(name);
+        out.extend_from_slice(content);
+        out
+    }
+
+    /// A track: its handler, an mdhd of `duration` at 1000 units a second, and a sample
+    /// entry named `codec` of `width` by 90.
+    fn trak(handler: &[u8; 4], codec: &[u8; 4], width: u16, duration: u32) -> Vec<u8> {
+        let mut mdhd = vec![0u8; 12];
+        mdhd.extend_from_slice(&1000u32.to_be_bytes());
+        mdhd.extend_from_slice(&duration.to_be_bytes());
+        let mut hdlr = vec![0u8; 8];
+        hdlr.extend_from_slice(handler);
+        let mut entry = vec![0u8; 4];
+        entry.extend_from_slice(codec);
+        entry.resize(32, 0);
+        entry.extend_from_slice(&width.to_be_bytes());
+        entry.extend_from_slice(&90u16.to_be_bytes());
+        let mut stsd = vec![0u8; 8];
+        stsd.extend_from_slice(&entry);
+        let stbl = mp4_box(b"stbl", &mp4_box(b"stsd", &stsd));
+        let minf = mp4_box(b"minf", &stbl);
+        let mdia = [mp4_box(b"mdhd", &mdhd), mp4_box(b"hdlr", &hdlr), minf].concat();
+        mp4_box(b"trak", &mp4_box(b"mdia", &mdia))
+    }
+
+    #[test]
+    fn mp4_facts_come_from_the_video_track() {
+        let mut mvhd = vec![0u8; 12];
+        mvhd.extend_from_slice(&1000u32.to_be_bytes());
+        mvhd.extend_from_slice(&9000u32.to_be_bytes());
+        // An audio track whose sample entry has a nonzero field where a width would be.
+        let moov = [
+            mp4_box(b"mvhd", &mvhd),
+            trak(b"soun", b"mp4a", 2, 9000),
+            trak(b"vide", b"avc1", 160, 2000),
+        ]
+        .concat();
+        let file = [mp4_box(b"ftyp", b"isom"), mp4_box(b"moov", &moov)].concat();
+        let path =
+            std::env::temp_dir().join(format!("recdr-unit-{}-audio-first.mp4", std::process::id()));
+        std::fs::write(&path, file).unwrap();
+        let facts = mp4::facts(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            (
+                facts.codec.as_str(),
+                facts.width,
+                facts.height,
+                facts.duration_ms
+            ),
+            ("avc1", 160, 90, 2000)
+        );
+    }
+
     #[test]
     fn check_mp4_leaves_no_file() {
         let _turn = one_encoder();
         if NEEDS_FFMPEG {
+            println!("not run: on this system check_mp4 only looks for ffmpeg and writes no file");
             return;
         }
         let begun = std::time::Instant::now();
@@ -578,8 +653,24 @@ mod tests {
             begun.elapsed().as_millis()
         );
         checked.unwrap();
-        let trial = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
-        assert!(!trial.exists(), "{} is left behind", trial.display());
+        assert_eq!(trials_left(), Vec::<String>::new());
+        // MCP calls run on their own threads, so checks can overlap. In this test, so
+        // that no other test sees its files half made.
+        let checks: Vec<_> = (0..8).map(|_| std::thread::spawn(check_mp4)).collect();
+        for check in checks {
+            check.join().unwrap().unwrap();
+        }
+        assert_eq!(trials_left(), Vec::<String>::new());
+    }
+
+    /// This process's check files in the temporary directory.
+    fn trials_left() -> Vec<String> {
+        let prefix = format!("recdr-check-{}-", std::process::id());
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.starts_with(&prefix))
+            .collect()
     }
 
     #[test]

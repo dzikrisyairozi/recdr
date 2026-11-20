@@ -70,10 +70,16 @@ impl ClickTap {
 
 impl Drop for ClickTap {
     fn drop(&mut self) {
-        self.run_loop.0.stop();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+        // A stop sent before the thread has entered CFRunLoop::run is lost, and the join
+        // would wait forever; so stop until the thread has finished.
+        while !thread.is_finished() {
+            self.run_loop.0.stop();
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
+        let _ = thread.join();
     }
 }
 

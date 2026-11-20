@@ -219,7 +219,7 @@ fn answer(mut stream: TcpStream) {
     );
 }
 
-fn chrome_path() -> PathBuf {
+pub fn chrome_path() -> PathBuf {
     if let Some(path) = std::env::var_os("RECDR_TEST_CHROME") {
         return path.into();
     }

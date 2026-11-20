@@ -33,6 +33,8 @@ pub struct Writer {
     fps: i32,
     /// Frames appended so far; the session ends at this many frame times.
     count: i64,
+    /// The last picture's buffer, appended again while the picture does not change.
+    last: Option<CFRetained<CVPixelBuffer>>,
 }
 
 fn failed(message: impl Into<String>) -> Error {
@@ -120,20 +122,47 @@ impl Writer {
             height: height as usize,
             fps: fps as i32,
             count: 0,
+            last: None,
         })
     }
 
-    /// Adds video frame `k`. Frames arrive in order, starting at 0.
-    pub fn push(&mut self, k: u64, image: &RgbaImage) -> Result<()> {
+    /// Adds video frame `k`. Frames arrive in order, starting at 0. `changed` is false
+    /// when `image` is the picture of the frame before.
+    pub fn push(&mut self, k: u64, image: &RgbaImage, changed: bool) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(10);
         // SAFETY: a property read.
         while !unsafe { self.input.isReadyForMoreMediaData() } {
+            // An encoder that failed in the background is never ready again; its own
+            // error says why.
+            // SAFETY: a property read.
+            if unsafe { self.writer.status() } == AVAssetWriterStatus::Failed {
+                return Err(writer_error(&self.writer, "the encoder failed"));
+            }
             if Instant::now() > deadline {
                 return Err(failed("the encoder did not take a frame within 10 seconds"));
             }
             std::thread::sleep(Duration::from_millis(1));
         }
 
+        let buffer = match self.last.take() {
+            Some(buffer) if !changed => buffer,
+            _ => self.pixel_buffer(image)?,
+        };
+        // SAFETY: the input is ready, and the buffer is a filled BGRA picture of the video's size.
+        let appended = unsafe {
+            self.adaptor
+                .appendPixelBuffer_withPresentationTime(&buffer, CMTime::new(k as i64, self.fps))
+        };
+        if !appended {
+            return Err(writer_error(&self.writer, "a frame was not appended"));
+        }
+        self.last = Some(buffer);
+        self.count += 1;
+        Ok(())
+    }
+
+    /// A new BGRA buffer holding `image`.
+    fn pixel_buffer(&self, image: &RgbaImage) -> Result<CFRetained<CVPixelBuffer>> {
         let mut out: *mut CVPixelBuffer = std::ptr::null_mut();
         // SAFETY: `out` is a valid place for the pointer to the created buffer.
         let status = unsafe {
@@ -181,17 +210,7 @@ impl Writer {
             }
             CVPixelBufferUnlockBaseAddress(&buffer, CVPixelBufferLockFlags(0));
         }
-
-        // SAFETY: the input is ready, and the buffer is a filled BGRA picture of the video's size.
-        let appended = unsafe {
-            self.adaptor
-                .appendPixelBuffer_withPresentationTime(&buffer, CMTime::new(k as i64, self.fps))
-        };
-        if !appended {
-            return Err(writer_error(&self.writer, "a frame was not appended"));
-        }
-        self.count += 1;
-        Ok(())
+        Ok(buffer)
     }
 
     /// Completes the file. `finishWriting` blocks until the file is closed. It runs on

@@ -28,7 +28,7 @@ use crate::model::{CaptureEvent, Frame, MonitorInfo, ResolvedKind, ResolvedTarge
 
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     permitted()?;
-    let displays: Vec<Display> = cg_displays().into_iter().map(|(_, d)| d).collect();
+    let displays: Vec<Display> = cg_displays()?.into_iter().map(|(_, d)| d).collect();
     let Some(list) = CGWindowListCopyWindowInfo(CGWindowListOption::OptionAll, 0) else {
         return Err(Error::CaptureFailed(
             "macOS did not list the windows".into(),
@@ -100,7 +100,7 @@ fn listed(layer: i32, title: &str, has_application: bool) -> bool {
 
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     permitted()?;
-    let displays: Vec<Display> = cg_displays().into_iter().map(|(_, d)| d).collect();
+    let displays: Vec<Display> = cg_displays()?.into_iter().map(|(_, d)| d).collect();
     Ok(display_bounds(&displays)
         .into_iter()
         .zip(&displays)
@@ -117,15 +117,19 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
 /// CoreGraphics, not ScreenCaptureKit: a process that has asked ScreenCaptureKit for
 /// its shareable content and stays alive (`start`, the MCP server) keeps the recorder
 /// it starts from ever getting its stream started (tasks/4-macos-capture, Task 8).
-fn cg_displays() -> Vec<(u32, Display)> {
+fn cg_displays() -> Result<Vec<(u32, Display)>> {
     let mut ids = [0u32; 32];
     let mut count = 0u32;
     // SAFETY: `ids` holds 32 entries and `count` is a valid out pointer.
     let status = unsafe { CGGetActiveDisplayList(32, ids.as_mut_ptr(), &mut count) };
     if status.0 != 0 {
-        return Vec::new();
+        // An empty list would read as "monitor 0 not found", which is not what happened.
+        return Err(Error::CaptureFailed(format!(
+            "macOS did not list the displays (CGError {})",
+            status.0
+        )));
     }
-    ids[..count as usize]
+    Ok(ids[..count as usize]
         .iter()
         .map(|&id| {
             let frame = CGDisplayBounds(id);
@@ -138,7 +142,7 @@ fn cg_displays() -> Vec<(u32, Display)> {
             };
             (id, display)
         })
-        .collect()
+        .collect())
 }
 
 /// Pixels per point of the display's current mode.
@@ -181,7 +185,7 @@ impl SckSource {
         let failed = |e: SCError| Error::CaptureFailed(e.to_string());
         let (filter, size, source, corner, scale) = match &resolved.kind {
             ResolvedKind::Monitor { index, crop } => {
-                let all = cg_displays();
+                let all = cg_displays()?;
                 let not_found = || Error::TargetNotFound(format!("monitor {index}"));
                 let (id, info) = *all.get(*index).ok_or_else(not_found)?;
                 let displays: Vec<Display> = all.iter().map(|(_, d)| *d).collect();

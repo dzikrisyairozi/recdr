@@ -27,24 +27,34 @@ fn parse(bytes: &[u8]) -> Option<Mp4Facts> {
     }
     let moov = *boxes(bytes, b"moov").first()?;
 
-    let mvhd = *boxes(moov, b"mvhd").first()?;
-    let (scale, duration) = match *mvhd.first()? {
-        0 => (u32_at(mvhd, 12)?, u64::from(u32_at(mvhd, 16)?)),
-        1 => (u32_at(mvhd, 20)?, u64_at(mvhd, 24)?),
-        _ => return None,
-    };
-    if scale == 0 {
-        return None;
-    }
-    let duration_ms = duration * 1000 / u64::from(scale);
-
     for trak in boxes(moov, b"trak") {
-        let Some(stsd) = [b"mdia", b"minf", b"stbl", b"stsd"]
+        let Some(mdia) = boxes(trak, b"mdia").first().copied() else {
+            continue;
+        };
+        // hdlr: 4 bytes of version and flags, 4 pre-defined, then the handler type.
+        let handler = boxes(mdia, b"hdlr")
+            .first()
+            .and_then(|hdlr| hdlr.get(8..12));
+        if handler != Some(b"vide") {
+            continue;
+        }
+        let Some(stsd) = [b"minf", b"stbl", b"stsd"]
             .iter()
-            .try_fold(trak, |content, name| boxes(content, name).first().copied())
+            .try_fold(mdia, |content, name| boxes(content, name).first().copied())
         else {
             continue;
         };
+        // The track's own length, in its mdhd; mvhd's is the longest track's.
+        let mdhd = *boxes(mdia, b"mdhd").first()?;
+        let (scale, duration) = match *mdhd.first()? {
+            0 => (u32_at(mdhd, 12)?, u64::from(u32_at(mdhd, 16)?)),
+            1 => (u32_at(mdhd, 20)?, u64_at(mdhd, 24)?),
+            _ => return None,
+        };
+        if scale == 0 {
+            return None;
+        }
+        let duration_ms = duration * 1000 / u64::from(scale);
         // 4 bytes of version and flags, 4 of entry count, then the first entry.
         let entry = stsd.get(8..)?;
         let width = u32::from(u16_at(entry, 32)?);

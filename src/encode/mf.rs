@@ -41,7 +41,13 @@ impl Writer {
     }
 
     /// Adds video frame `k`. Frames arrive in order, starting at 0.
-    pub fn push(&mut self, k: u64, image: &RgbaImage) -> Result<()> {
+    ///
+    /// Every frame is converted, also an unchanged one. windows-capture queues frames
+    /// without a bound and gives no way to wait for the encoder; the conversion keeps
+    /// this loop near the encoder's speed. Skipping it for a still 1080p picture let
+    /// the queue reach 11 GB (tasks/5-native-mp4/evidence/R1-measure.log).
+    // ponytail: no real bound until windows-capture's channel is bounded (plan task 1).
+    pub fn push(&mut self, k: u64, image: &RgbaImage, _changed: bool) -> Result<()> {
         // The encoder takes BGRA with the bottom row first.
         let mut bgra = image::imageops::flip_vertical(image).into_raw();
         for pixel in bgra.as_chunks_mut::<4>().0 {

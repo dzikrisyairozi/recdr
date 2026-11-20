@@ -34,6 +34,11 @@ pub trait CaptureSource {
     /// While true, a paced source keeps its frames and still reports clicks and its end.
     /// It hands out no frame, so it acknowledges none, and the browser waits.
     fn hold_frames(&mut self, _hold: bool) {}
+    /// How long before it was handed out the last frame arrived. The recorder takes this
+    /// off the frame's time, so frames and clicks are timed from the same moment.
+    fn frame_age(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 /// A mouse press as the system reports it: wall-clock milliseconds, x and y in the

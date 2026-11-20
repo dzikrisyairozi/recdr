@@ -169,8 +169,9 @@ fn fake_kind(value: &str) -> Result<FakeKind> {
         "moving" => Ok(FakeKind::Moving),
         "closing" => Ok(FakeKind::Closing),
         "broken" => Ok(FakeKind::Broken),
+        "failing" => Ok(FakeKind::Failing),
         other => Err(Error::Usage(format!(
-            "{FAKE_SOURCE_ENV}={other:?} is not static, moving, closing or broken"
+            "{FAKE_SOURCE_ENV}={other:?} is not static, moving, closing, broken or failing"
         ))),
     }
 }
