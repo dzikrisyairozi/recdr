@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -239,8 +240,9 @@ pub struct Browser {
 
 impl Browser {
     /// Headless Chrome with a fresh user data directory and these extra arguments.
-    /// Chrome on a CI runner has twice written no `DevToolsActivePort` within 20 s; a
-    /// start that hangs is ended and tried once more.
+    /// A cold Windows runner's Chrome has written no `DevToolsActivePort` within 20 s,
+    /// twice in a row; it gets 60 s, and a start that hangs is ended and tried once more.
+    /// Chrome's stderr is kept next to its directory and printed when a start fails.
     pub fn start(name: &str, extra: &[&str]) -> Browser {
         let mut args: Vec<String> = [
             "--headless=new",
@@ -271,7 +273,7 @@ impl Browser {
 
     fn launch(name: &str, args: Vec<String>) -> Browser {
         Self::try_launch(name, &args).unwrap_or_else(|| {
-            eprintln!("Chrome wrote no DevToolsActivePort in 20 s; starting it again");
+            eprintln!("Chrome wrote no DevToolsActivePort in 60 s; starting it again");
             Self::try_launch(name, &args).expect("Chrome wrote no DevToolsActivePort, twice")
         })
     }
@@ -285,7 +287,7 @@ impl Browser {
             .arg(format!("--user-data-dir={}", dir.display()))
             .args(args)
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(File::create(dir.with_extension("log")).unwrap());
         if std::env::var_os("CI").is_some() {
             command.arg("--no-sandbox");
         }
@@ -297,13 +299,19 @@ impl Browser {
             dir,
             port: 0,
         };
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let deadline = Instant::now() + Duration::from_secs(60);
         browser.port = loop {
             let text = std::fs::read_to_string(browser.port_file()).unwrap_or_default();
             if let [port, _path] = text.lines().collect::<Vec<_>>()[..] {
                 break port.parse().unwrap();
             }
             if Instant::now() >= deadline {
+                let log = std::fs::read_to_string(browser.dir.with_extension("log"));
+                eprintln!(
+                    "Chrome's stderr:
+{}",
+                    log.unwrap_or_default()
+                );
                 // Dropping the browser ends Chrome and removes its directory.
                 return None;
             }
