@@ -104,7 +104,7 @@ Options for `record` and `start`:
 | `--duration <time>` | none | `record` only. Stop after this long. Larger than `--max-duration` is a usage error. |
 | `--fps <n>` | 15 | Capture rate limit, 1 to 60. A frame that arrives sooner than 1/n seconds after the last accepted frame is discarded. |
 | `--max-duration <time>` | 5m | Applies in every mode. The recording stops itself at this length. |
-| `--max-size <size>` | 2GB | Applies in every mode. The recording stops itself when its directory reaches this size. |
+| `--max-size <size>` | 2GB | Applies in every mode. The recording stops itself when its stored frames reach this size (the GIF, MP4, samples and log are not counted). |
 | `--format <list>` | gif | `gif`, `mp4`, or both separated by a comma. |
 | `--no-cursor` | off | Leave the mouse cursor out of the frames. |
 | `--no-click-highlight` | off | Do not record clicks: no mouse hook is installed, the manifest has no clicks, and no rings are drawn. |
@@ -219,7 +219,7 @@ The MCP server starts recordings the same way `recdr start` does, so a recording
 | `stopped` | `recdr stop` was called. |
 | `duration_reached` | `--duration` elapsed. |
 | `cap_reached` | `--max-duration` elapsed. A later `recdr stop` prints the result that already exists. |
-| `size_cap_reached` | The recording directory reached `--max-size`. A later `recdr stop` prints the result that already exists. |
+| `size_cap_reached` | The stored frames reached `--max-size`. A later `recdr stop` prints the result that already exists. |
 | `command_exited` | The wrapped command exited. Its exit code is in `command_exit_code`; recdr itself exits 0 when the recording succeeded. |
 | `window_closed` | The recorded window was closed. Frames captured so far are encoded. |
 
