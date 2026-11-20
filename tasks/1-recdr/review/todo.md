@@ -63,7 +63,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: the code named in the spec is returned
   - Verify: `rtk proxy cargo test --test record`
   - Files: spec/1-recdr/spec-agent-recorder.md, src/control.rs, tests/record.rs
-- [ ] Task 12: No `expect` outside tests
+- [x] Task 12: No `expect` outside tests
   - Finding: Suggestion — src/encode/ffmpeg.rs:58
   - Acceptance: `git grep -n "expect(" -- src` shows only test code
   - Verify: clippy and tests

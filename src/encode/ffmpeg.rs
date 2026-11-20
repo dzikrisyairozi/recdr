@@ -55,7 +55,10 @@ pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
 
     // Read stderr on its own thread so a chatty ffmpeg cannot block on a full pipe
     // while we block writing its stdin.
-    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let (Some(mut stderr), Some(mut stdin)) = (child.stderr.take(), child.stdin.take()) else {
+        let _ = child.kill();
+        return Err(failed("ffmpeg started without its pipes".into()));
+    };
     let errors = thread::spawn(move || {
         let mut text = String::new();
         let _ = stderr.read_to_string(&mut text);
@@ -63,9 +66,9 @@ pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
     });
 
     let pieces = timeline(manifest);
-    let mut stdin = child.stdin.take().expect("stdin is piped");
     let frames = (manifest.duration_ms * fps).div_ceil(1000);
-    let mut shown: Option<(usize, Vec<u8>)> = None;
+    // The piece on show and its pixels; usize::MAX matches no piece.
+    let mut shown: (usize, Vec<u8>) = (usize::MAX, Vec::new());
     for k in 0..frames {
         let t_ms = k * 1000 / fps;
         let Some(at) = pieces
@@ -75,12 +78,11 @@ pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
         else {
             break;
         };
-        if shown.as_ref().is_none_or(|(i, _)| *i != at) {
-            shown = Some((at, render(dir, &pieces[at])?.into_raw()));
+        if shown.0 != at {
+            shown = (at, render(dir, &pieces[at])?.into_raw());
         }
-        let rgba = &shown.as_ref().expect("set above").1;
         // A write error means ffmpeg exited; its stderr says why.
-        if stdin.write_all(rgba).is_err() {
+        if stdin.write_all(&shown.1).is_err() {
             break;
         }
     }
