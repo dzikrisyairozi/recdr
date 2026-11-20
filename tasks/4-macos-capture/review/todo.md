@@ -13,7 +13,7 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
 
 ## Phase 2: Suggestions
 
-- [ ] Task 2: Keep a `--region` size check in macOS CI
+- [x] Task 2: Keep a `--region` size check in macOS CI
   - Finding: Suggestion — .github/workflows/ci.yml:34
   - Acceptance: CI runs a `--region` recording that asserts 400x300; only the color test is skipped
   - Verify: macOS CI log

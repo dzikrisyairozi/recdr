@@ -218,7 +218,7 @@ A desktop test starts Chrome with `--app=http://127.0.0.1:<port>/<page>`, a temp
 
 No test sends a mouse press, as in the `cdp-capture` spec: an injected press lands on whatever is under the pointer. The click filter and the conversion have unit tests, and one real click is checked by hand.
 
-CI runs the macOS desktop tests on `macos-latest` if the plan's first task shows that a stream delivers frames there. If it does not, they run only on the owner's Mac, and the plan says so.
+CI runs the macOS desktop tests on `macos-latest` if the plan's first task shows that a stream delivers frames there. If it does not, they run only on the owner's Mac, and the plan says so. The plan's first task showed that it does, so CI runs them, with one test skipped: `region_inside_the_green_page_is_green`, because on the runner the screen itself shows the page pale at that point. `region_recording_is_the_region_size` still checks criterion 5's 400x300 there.
 
 ## Boundaries
 

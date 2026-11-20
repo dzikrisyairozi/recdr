@@ -430,6 +430,20 @@ mod on_macos {
         }
     }
 
+    /// Criterion 5, the size half. It needs nothing on the screen, so CI runs it where the
+    /// color half below is skipped.
+    #[test]
+    #[ignore]
+    fn region_recording_is_the_region_size() {
+        let args = ["--region", "0,0,400,300", "--duration", "2s"];
+        let result = ok(&record("region-size", &args));
+        let frames = stored_frames(&result);
+        assert!(!frames.is_empty());
+        for frame in frames {
+            assert_eq!((frame.width(), frame.height()), (400, 300));
+        }
+    }
+
     /// Criterion 5. `--no-cursor`, so the pointer resting on the window cannot be the
     /// center pixel.
     #[test]
