@@ -273,6 +273,9 @@ impl CaptureSource for WgcSource {
 
 impl Drop for WgcSource {
     fn drop(&mut self) {
+        // The receiver goes first: a capture thread blocked sending `Closed` into a full
+        // channel then gets an error and ends, and `stop` below can join it.
+        drop(mem::replace(&mut self.events, mpsc::sync_channel(0).1));
         // `stop` consumes the control, hence the Option.
         if let Some(control) = self.control.take() {
             let _ = control.stop();

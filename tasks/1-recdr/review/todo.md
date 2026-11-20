@@ -43,7 +43,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: after `recorder_start_failed` on a timeout, the recorder process ends
   - Verify: test with a fake source that delays its first frame
   - Files: src/control.rs, src/capture/fake.rs, tests/record.rs
-- [ ] Task 8: Drop the receiver before stopping the capture
+- [x] Task 8: Drop the receiver before stopping the capture
   - Finding: Suggestion — src/capture/windows.rs:259
   - Acceptance: `Drop for WgcSource` takes the receiver before `control.stop()`
   - Verify: desktop tests
