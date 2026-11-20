@@ -4,7 +4,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
 
 ## Phase 1: Important
 
-- [ ] Task 1: Bound the Windows encoder's memory (blocked on the owner's choice of option)
+- [ ] Task 1: Bound the Windows encoder's memory (blocked on the owner's choice of option; measured and recorded in the spec, conversion kept per frame on Windows)
   - Finding: Important — src/encode/mf.rs:52 (the reviewer said Critical; measured 138 MB peak for 4,500 frames of 1080p on an RTX 3060)
   - Acceptance: with a slow encoder, exporting 4,500 frames of 1920x1080 stays under 500 MB peak working set
   - Verify: repeat the measurement and save it under `tasks/5-native-mp4/evidence/`; `rtk proxy cargo test`
