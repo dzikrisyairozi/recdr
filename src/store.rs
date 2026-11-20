@@ -69,9 +69,14 @@ impl RecordingDir {
         }
     }
 
+    /// The recording `id` under `out`. An id that is not one plain name (`..`, a path,
+    /// an absolute path) is not found, so nothing outside `out` is opened.
     pub fn open(out: &Path, id: &str) -> Result<Self> {
+        let mut parts = Path::new(id).components();
+        let plain =
+            matches!(parts.next(), Some(std::path::Component::Normal(_))) && parts.next().is_none();
         let path = out.join(id);
-        if !path.join(STATE).is_file() {
+        if !plain || !path.join(STATE).is_file() {
             return Err(Error::RecordingNotFound(id.to_owned()));
         }
         Ok(Self { path })
@@ -353,6 +358,30 @@ pub fn frame_at(frames: &[FrameEntry], t_ms: u64) -> Option<&FrameEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_id_that_is_a_path_is_not_found() {
+        let root = std::env::temp_dir().join(format!("recdr-unit-{}-open", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inside = RecordingDir::create(&root.join("out"), 0).unwrap();
+        inside.write_state(&state(inside.id())).unwrap();
+        let outside = RecordingDir::create(&root, 0).unwrap();
+        outside.write_state(&state(outside.id())).unwrap();
+        let out = root.join("out");
+        assert!(RecordingDir::open(&out, inside.id()).is_ok());
+        for id in [
+            format!("../{}", outside.id()),
+            outside.path().display().to_string(),
+        ] {
+            assert!(
+                matches!(
+                    RecordingDir::open(&out, &id),
+                    Err(Error::RecordingNotFound(_))
+                ),
+                "{id}"
+            );
+        }
+    }
     use crate::model::{FakeKind, RecordOptions, ResolvedKind, ResolvedTarget, Status, Target};
 
     fn temp(name: &str) -> PathBuf {

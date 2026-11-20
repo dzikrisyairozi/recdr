@@ -53,7 +53,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: a 900,000 ms piece gives delays that add up to 90,000 hundredths
   - Verify: unit test on the delays
   - Files: src/encode/gif.rs
-- [ ] Task 10: Reject ids that are not recording ids
+- [x] Task 10: Reject ids that are not recording ids
   - Finding: Suggestion — src/store.rs:73
   - Acceptance: `..\x` and absolute paths give `recording_not_found`
   - Verify: unit test
