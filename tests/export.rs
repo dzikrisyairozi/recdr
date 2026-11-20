@@ -326,4 +326,20 @@ fn export_replaces_only_on_success() {
     );
     assert_eq!(error_code(&failed), "usage");
     assert_eq!(std::fs::read(&file).unwrap(), written);
+
+    // An encoder that fails part way: a stored frame is gone.
+    let frames = out.join(&id).join("frames");
+    let last = std::fs::read_dir(&frames)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .max()
+        .unwrap();
+    std::fs::remove_file(last).unwrap();
+    let failed = export(&out, &id, &["--file", file.to_str().unwrap()]);
+    assert_eq!(error_code(&failed), "encode_failed");
+    assert_eq!(std::fs::read(&file).unwrap(), written);
+    for entry in std::fs::read_dir(&out).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!name.contains(".part."), "{name} is left behind");
+    }
 }

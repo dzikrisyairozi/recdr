@@ -43,7 +43,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: `ui()` no longer calls `image::open`
   - Verify: manual playback of a 1080p recording
   - Files: src/gui/worker.rs, src/gui/state.rs, src/gui/app.rs
-- [ ] Task 8: Test a failed encode in `export_replaces_only_on_success`
+- [x] Task 8: Test a failed encode in `export_replaces_only_on_success`
   - Finding: Suggestion — tests/export.rs:300
   - Acceptance: a failed encode leaves the old target and no `.part.` file
   - Verify: `rtk proxy cargo test --test export`
