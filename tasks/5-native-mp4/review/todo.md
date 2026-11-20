@@ -28,7 +28,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: one `CVPixelBuffer` per changed picture
   - Verify: macOS MP4 tests
   - Files: src/encode/avf.rs, src/encode/mod.rs
-- [ ] Task 5: Read facts from the video track only
+- [x] Task 5: Read facts from the video track only
   - Finding: Suggestion — tests/common/mp4.rs:49
   - Acceptance: `facts` skips non-`vide` tracks and reads the track's `mdhd`
   - Verify: unit test with an audio-first `moov`

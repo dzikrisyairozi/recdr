@@ -529,6 +529,67 @@ mod tests {
         assert!(at(240, 60)[1] > 200, "inside the ring is {:?}", at(240, 60));
     }
 
+    /// A box: big-endian size, name, content.
+    fn mp4_box(name: &[u8; 4], content: &[u8]) -> Vec<u8> {
+        let mut out = u32::try_from(content.len() + 8)
+            .unwrap()
+            .to_be_bytes()
+            .to_vec();
+        out.extend_from_slice(name);
+        out.extend_from_slice(content);
+        out
+    }
+
+    /// A track: its handler, an mdhd of `duration` at 1000 units a second, and a sample
+    /// entry named `codec` of `width` by 90.
+    fn trak(handler: &[u8; 4], codec: &[u8; 4], width: u16, duration: u32) -> Vec<u8> {
+        let mut mdhd = vec![0u8; 12];
+        mdhd.extend_from_slice(&1000u32.to_be_bytes());
+        mdhd.extend_from_slice(&duration.to_be_bytes());
+        let mut hdlr = vec![0u8; 8];
+        hdlr.extend_from_slice(handler);
+        let mut entry = vec![0u8; 4];
+        entry.extend_from_slice(codec);
+        entry.resize(32, 0);
+        entry.extend_from_slice(&width.to_be_bytes());
+        entry.extend_from_slice(&90u16.to_be_bytes());
+        let mut stsd = vec![0u8; 8];
+        stsd.extend_from_slice(&entry);
+        let stbl = mp4_box(b"stbl", &mp4_box(b"stsd", &stsd));
+        let minf = mp4_box(b"minf", &stbl);
+        let mdia = [mp4_box(b"mdhd", &mdhd), mp4_box(b"hdlr", &hdlr), minf].concat();
+        mp4_box(b"trak", &mp4_box(b"mdia", &mdia))
+    }
+
+    #[test]
+    fn mp4_facts_come_from_the_video_track() {
+        let mut mvhd = vec![0u8; 12];
+        mvhd.extend_from_slice(&1000u32.to_be_bytes());
+        mvhd.extend_from_slice(&9000u32.to_be_bytes());
+        // An audio track whose sample entry has a nonzero field where a width would be.
+        let moov = [
+            mp4_box(b"mvhd", &mvhd),
+            trak(b"soun", b"mp4a", 2, 9000),
+            trak(b"vide", b"avc1", 160, 2000),
+        ]
+        .concat();
+        let file = [mp4_box(b"ftyp", b"isom"), mp4_box(b"moov", &moov)].concat();
+        let path =
+            std::env::temp_dir().join(format!("recdr-unit-{}-audio-first.mp4", std::process::id()));
+        std::fs::write(&path, file).unwrap();
+        let facts = mp4::facts(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            (
+                facts.codec.as_str(),
+                facts.width,
+                facts.height,
+                facts.duration_ms
+            ),
+            ("avc1", 160, 90, 2000)
+        );
+    }
+
     #[test]
     fn check_mp4_leaves_no_file() {
         if NEEDS_FFMPEG {
