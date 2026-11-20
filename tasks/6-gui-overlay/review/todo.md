@@ -33,7 +33,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: a panic in `worker::perform` becomes `Event::Failed`
   - Verify: unit test
   - Files: src/gui/app.rs
-- [ ] Task 6: Tighten the gui import rule
+- [x] Task 6: Tighten the gui import rule
   - Finding: Suggestion — tests/layers.rs:147
   - Acceptance: `crate::time` and aliased imports in `src/gui/` fail the test; `std::time` passes
   - Verify: `rtk proxy cargo test --test layers`

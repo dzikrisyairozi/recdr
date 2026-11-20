@@ -142,26 +142,25 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
         }
     }
-    // The app is a front end too. `time::` is left out because the windows part needs
-    // `std::time::Duration`.
-    let below_gui = [
-        "recorder::",
-        "capture::",
-        "store::",
-        "analyze::",
-        "encode::",
-        "draw::",
-        "platform::",
-        "export::",
-        "cli::",
-        "mcp::",
-        "crate::{",
-    ];
+    // The app is a front end too: below it, it may name only these modules, by path,
+    // so an alias or a grouped import cannot hide another one. Checking what follows
+    // `crate::` leaves `std::time` alone.
+    let gui_may_use = ["control", "error", "model", "request"];
     for (path, code) in source_files() {
-        if path.starts_with("src/gui/") {
-            for needle in below_gui {
-                assert!(!code.contains(needle), "{path} contains {needle:?}");
-            }
+        if !path.starts_with("src/gui/") {
+            continue;
+        }
+        for (at, _) in code.match_indices("crate::") {
+            let rest = &code[at + "crate::".len()..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            assert!(
+                gui_may_use.contains(&name.as_str()),
+                "{path} uses crate::{}",
+                rest.chars().take(20).collect::<String>()
+            );
         }
     }
 }
