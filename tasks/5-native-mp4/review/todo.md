@@ -9,7 +9,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: with a slow encoder, exporting 4,500 frames of 1920x1080 stays under 500 MB peak working set
   - Verify: repeat the measurement and save it under `tasks/5-native-mp4/evidence/`; `rtk proxy cargo test`
   - Files: src/encode/mf.rs, src/encode/mod.rs, Cargo.toml, spec/5-native-mp4/spec.md
-- [ ] Task 2: Give each `check_mp4` trial its own file
+- [x] Task 2: Give each `check_mp4` trial its own file
   - Finding: Important — src/encode/mod.rs:63
   - Acceptance: eight threads calling `check_mp4` at once all get `Ok`, and no trial file is left
   - Verify: new unit test; `rtk proxy cargo test`
@@ -33,7 +33,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: `facts` skips non-`vide` tracks and reads the track's `mdhd`
   - Verify: unit test with an audio-first `moov`
   - Files: tests/common/mp4.rs
-- [ ] Task 6: Say when `check_mp4_leaves_no_file` does not run
+- [x] Task 6: Say when `check_mp4_leaves_no_file` does not run
   - Finding: Suggestion — src/encode/mod.rs:530
   - Acceptance: the Linux branch prints a "not run" note
   - Verify: Linux CI log

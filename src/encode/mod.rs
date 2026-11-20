@@ -60,7 +60,11 @@ pub fn check_mp4() -> Result<()> {
 /// a one-frame video is written to the temporary directory with the system encoder.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn check_mp4() -> Result<()> {
-    let path = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
+    // A name per call: MCP calls run on their own threads, and two checks sharing a
+    // file break each other.
+    static TRIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = TRIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("recdr-check-{}-{n}.mp4", std::process::id()));
     let black = RgbaImage::from_pixel(160, 120, image::Rgba([0, 0, 0, 255]));
     let trial = Writer::create(&path, 160, 120, 1, 1_000_000).and_then(|mut writer| {
         let pushed = writer.push(0, &black);
@@ -528,6 +532,7 @@ mod tests {
     #[test]
     fn check_mp4_leaves_no_file() {
         if NEEDS_FFMPEG {
+            println!("not run: on this system check_mp4 only looks for ffmpeg and writes no file");
             return;
         }
         let begun = std::time::Instant::now();
@@ -537,8 +542,24 @@ mod tests {
             begun.elapsed().as_millis()
         );
         checked.unwrap();
-        let trial = std::env::temp_dir().join(format!("recdr-check-{}.mp4", std::process::id()));
-        assert!(!trial.exists(), "{} is left behind", trial.display());
+        assert_eq!(trials_left(), Vec::<String>::new());
+        // MCP calls run on their own threads, so checks can overlap. In this test, so
+        // that no other test sees its files half made.
+        let checks: Vec<_> = (0..8).map(|_| std::thread::spawn(check_mp4)).collect();
+        for check in checks {
+            check.join().unwrap().unwrap();
+        }
+        assert_eq!(trials_left(), Vec::<String>::new());
+    }
+
+    /// This process's check files in the temporary directory.
+    fn trials_left() -> Vec<String> {
+        let prefix = format!("recdr-check-{}-", std::process::id());
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.starts_with(&prefix))
+            .collect()
     }
 
     #[test]
