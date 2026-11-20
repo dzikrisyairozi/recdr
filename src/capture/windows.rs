@@ -273,7 +273,7 @@ impl CaptureSource for WgcSource {
         if let (Some(hook), Some(size)) = (&self.hook, self.size) {
             while let Some(click) = hook.try_next() {
                 let event = super::to_event(
-                    (click.0, f64::from(click.1), f64::from(click.2), click.3),
+                    click,
                     (f64::from(self.origin.0), f64::from(self.origin.1)),
                     size,
                     1.0,

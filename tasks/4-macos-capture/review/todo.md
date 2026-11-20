@@ -28,12 +28,12 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
   - Acceptance: `process` equals Chrome's application name; the monitor size comes from an independent source; criterion 3 reads the GIF or the spec names `duration_ms`
   - Verify: macOS desktop tests
   - Files: tests/desktop.rs, spec/4-macos-capture/spec.md
-- [ ] Task 5 (optional): One `desktop` alias per system
+- [x] Task 5 (optional): One `desktop` alias per system — declined: Linux needs a stub `open` and both list functions anyway, so it saves about 15 lines in macOS code that can only be checked by clippy here
   - Finding: Suggestion — src/capture/mod.rs:142
   - Acceptance: `desktop_source`, `list_windows` and `list_monitors` each have one body
   - Verify: clippy for the three targets; `tests/layers.rs`
   - Files: src/capture/mod.rs, src/capture/windows.rs, src/capture/macos.rs
-- [ ] Task 6 (optional): Have the Windows hook send `Press`
+- [x] Task 6 (optional): Have the Windows hook send `Press`
   - Finding: Suggestion — src/capture/hook.rs:19
   - Acceptance: `RawClick` is gone
   - Verify: Windows desktop tests
