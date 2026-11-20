@@ -129,7 +129,8 @@ cargo test
 
 ### Checkpoint B: Windows is done (needs a pull request)
 - [x] The owner pushes the branch and opens a draft pull request. The build stops and asks.
-- [ ] The `test` job is green on the three runners. On `ubuntu-latest` the log shows the MP4 tests ran and printed no `skipped` note (criterion 7).
+- [x] The `test` job is green on the three runners. On `ubuntu-latest` the log shows the MP4 tests ran and printed no `skipped` note (criterion 7).
+  - 2026-11-20: run 44688614222 green on all three; the `ubuntu-latest` log has `mp4_is_h264_of_the_recording_length ... ok` and `mp4_with_no_ffmpeg_on_path ... ok` and no `skipped` note.
 - [x] Record in `acceptance.md` whether `windows-latest` has an H.264 encoder. If it has none, make the change under "If the Windows runner has no encoder" in the plan, as its own commit, and push again.
 - [x] By hand: criterion 13 for Windows. (2026-11-19: plays in Chrome and opens in the Windows media stack; see `acceptance.md`.)
 
