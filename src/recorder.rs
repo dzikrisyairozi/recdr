@@ -106,7 +106,9 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             Some(CaptureEvent::Frame(frame))
                 if source.paced() || elapsed_ms / interval_ms > last_slot =>
             {
-                writer.push(frame, elapsed_ms)?;
+                // Timed from when the frame arrived, as clicks are.
+                let age_ms = source.frame_age().as_millis() as u64;
+                writer.push(frame, elapsed_ms.saturating_sub(age_ms))?;
                 last_slot = elapsed_ms / interval_ms;
             }
             Some(CaptureEvent::Frame(_)) | None => {}

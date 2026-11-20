@@ -87,6 +87,10 @@ pub struct CdpSource {
     /// When the last press was kept. Presses closer than `MIN_CLICK_GAP_MS` are dropped,
     /// so a page calling the binding in a loop cannot flood the recording.
     last_click_ms: u64,
+    /// When each frame decoding or held arrived, oldest first, like `held`.
+    arrivals: VecDeque<Instant>,
+    /// See `CaptureSource::frame_age`.
+    last_age: Duration,
     /// Frames not decoded because `MAX_WAITING` were already waiting.
     dropped: u64,
     /// Identifier of the new-document script, when clicks are reported.
@@ -134,6 +138,8 @@ impl CdpSource {
             frame_size: None,
             last_click_ms: 0,
             dropped: 0,
+            arrivals: VecDeque::new(),
+            last_age: Duration::ZERO,
             clicks: VecDeque::new(),
             click_script: None,
         };
@@ -191,6 +197,7 @@ impl CdpSource {
                     .send(data.as_str().unwrap_or_default().to_owned())
                     .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
                 self.decoding += 1;
+                self.arrivals.push_back(Instant::now());
             }
             if let Some(id) = incoming.params["sessionId"].as_i64() {
                 self.unacked.push(id);
@@ -274,6 +281,10 @@ impl CaptureSource for CdpSource {
                 && let Some(frame) = self.held.pop_front()
             {
                 self.frame_size = Some((frame.width, frame.height));
+                self.last_age = self
+                    .arrivals
+                    .pop_front()
+                    .map_or(Duration::ZERO, |t| t.elapsed());
                 // Every frame received has now been handed out. Acking all of them
                 // matters: the browser stops sending while three frames are unacked.
                 if self.held.is_empty() && self.decoding == 0 {
@@ -297,6 +308,10 @@ impl CaptureSource for CdpSource {
 
     fn dropped(&self) -> u64 {
         self.dropped
+    }
+
+    fn frame_age(&self) -> Duration {
+        self.last_age
     }
 
     fn paced(&self) -> bool {

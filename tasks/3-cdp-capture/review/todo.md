@@ -18,7 +18,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
 
 ## Phase 2: Suggestions
 
-- [ ] Task 3: Stamp frames when they arrive
+- [x] Task 3: Stamp frames when they arrive
   - Finding: Suggestion — src/capture/cdp.rs:247 (spec drift, code side)
   - Acceptance: a click and the frame showing the page's reaction are within one frame interval
   - Verify: browser test with a page that changes color on mousedown
