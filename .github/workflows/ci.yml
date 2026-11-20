@@ -35,4 +35,6 @@ jobs:
       # ScreenCaptureKit stream delivers frames on the hosted macOS runner.
       # It runs after a failed browser step too, so one does not hide the other's result.
       - if: runner.os == 'macOS' && !cancelled()
-        run: cargo test --test desktop -- --ignored --test-threads=1
+        # The green region test is skipped here by the owner's decision: on the runner the
+        # screen itself shows the page pale at that point (acceptance.md, criterion 5).
+        run: cargo test --test desktop -- --ignored --test-threads=1 --skip region_inside_the_green_page_is_green
