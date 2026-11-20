@@ -27,6 +27,19 @@ pub fn run(dir: &RecordingDir) -> Result<RecordingResult> {
     finalize(dir, &mut state, manifest, command_exit_code)
 }
 
+/// The command given after `--`. Dropping it ends the command and everything it started,
+/// unless it has exited, so an error that ends the recording ends the command too.
+struct WrappedCommand(Child);
+
+impl Drop for WrappedCommand {
+    fn drop(&mut self) {
+        if matches!(self.0.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        platform::kill_tree(&mut self.0);
+    }
+}
+
 fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i32>)> {
     let options = state.options.clone();
     let mut source = capture::open(&state.resolved, options.fps, options.cursor, options.clicks)?;
@@ -54,6 +67,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     state.started_at_unix_ms = time::now_unix_ms();
     state.status = Status::Recording;
     state.pid = std::process::id();
+    state.pid_started = platform::process_started(state.pid).unwrap_or(0);
     state.width = first.width;
     state.height = first.height;
     dir.write_state(state)?;
@@ -65,7 +79,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     let mut writer = writer.into_thread()?;
 
     let mut child = match &options.command {
-        Some(command) => Some(platform::spawn_command(command)?),
+        Some(command) => Some(WrappedCommand(platform::spawn_command(command)?)),
         None => None,
     };
     let mut command_exit_code = None;
@@ -92,7 +106,9 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             Some(CaptureEvent::Frame(frame))
                 if source.paced() || elapsed_ms / interval_ms > last_slot =>
             {
-                writer.push(frame, elapsed_ms)?;
+                // Timed from when the frame arrived, as clicks are.
+                let age_ms = source.frame_age().as_millis() as u64;
+                writer.push(frame, elapsed_ms.saturating_sub(age_ms))?;
                 last_slot = elapsed_ms / interval_ms;
             }
             Some(CaptureEvent::Frame(_)) | None => {}
@@ -112,7 +128,12 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             })
         } else if dir.stop_requested() {
             Some(StopReason::Stopped)
-        } else if let Some(status) = child.as_mut().map(Child::try_wait).transpose()?.flatten() {
+        } else if let Some(status) = child
+            .as_mut()
+            .map(|c| c.0.try_wait())
+            .transpose()?
+            .flatten()
+        {
             command_exit_code = status.code();
             Some(StopReason::CommandExited)
         } else if options.duration_ms.is_some_and(|d| elapsed_ms >= d) {
@@ -132,11 +153,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     let (frames, skipped) = writer.finish()?;
     let dropped_frames = source.dropped() + skipped;
     drop(source);
-    if let Some(mut child) = child
-        && stop_reason != StopReason::CommandExited
-    {
-        platform::kill_tree(&mut child);
-    }
+    drop(child);
     let clicks = clicks(raw_clicks, state.started_at_unix_ms, duration_ms);
 
     let marks = dir
@@ -240,6 +257,7 @@ pub(crate) fn prepared(options: crate::model::RecordOptions, name: &str) -> Reco
         id: dir.id().to_owned(),
         status: Status::Starting,
         pid: 0,
+        pid_started: 0,
         started_at_unix_ms: 0,
         width: 0,
         height: 0,

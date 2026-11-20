@@ -269,3 +269,23 @@ fn mark_lands_at_the_time_it_was_made() {
         (Some(1), Some("recording_not_found"))
     );
 }
+
+#[test]
+fn frames_of_a_running_recording_is_not_finished() {
+    let out = out_dir("frames-running");
+    let id = start("moving", &out, &[]);
+    let (code, err) = error(&run("moving", &out, &["frames", &id, "--keyframes"]));
+    let _ = run("moving", &out, &["stop", &id]);
+    assert_eq!(code, Some(1));
+    assert_eq!(err["code"], "recording_not_finished");
+}
+
+#[test]
+fn a_recorder_error_reaches_stop() {
+    let out = out_dir("start-failing");
+    let id = start("failing", &out, &[]);
+    sleep(Duration::from_secs(2));
+    let (code, err) = error(&run("failing", &out, &["stop", &id]));
+    assert_eq!(code, Some(1));
+    assert_eq!(err["code"], "capture_failed", "{err}");
+}

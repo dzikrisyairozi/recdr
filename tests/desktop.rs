@@ -69,6 +69,17 @@ mod on_windows {
         assert!(result["frames_stored"].as_u64().unwrap() >= 1);
     }
 
+    /// Success criterion 17, through the CLI. A whole-monitor PNG passes 1 MB within the
+    /// first frames, so the cap ends the recording long before --duration.
+    #[test]
+    #[ignore]
+    fn size_cap_ends_a_recording() {
+        let args = ["--monitor", "0", "--max-size", "1MB", "--duration", "20s"];
+        let result = ok(&record("size-cap", &args));
+        assert_eq!(result["stop_reason"], "size_cap_reached");
+        assert!(result["duration_ms"].as_u64().unwrap() < 20_000);
+    }
+
     #[test]
     #[ignore]
     fn region_recording_is_cropped() {
@@ -101,10 +112,9 @@ mod on_windows {
         let _ = child.wait();
         let result = ok(&output);
         assert!(result["frames_stored"].as_u64().unwrap() >= 1);
+        // The listed bounds are the visible frame, which is what the capture holds.
         for side in ["width", "height"] {
-            let got = result[side].as_i64().unwrap();
-            let listed = window["bounds"][side].as_i64().unwrap();
-            assert!((got - listed).abs() <= 40, "{side}: {got} vs {listed}");
+            assert_eq!(result[side], window["bounds"][side], "{side}");
         }
     }
 
@@ -260,7 +270,10 @@ mod on_macos {
         let (_browser, window) = test_window("list", "anim");
         assert_eq!(window["title"], title("list"));
         assert_eq!(window["minimized"], false);
-        assert_ne!(window["process"], "");
+        // A macOS application's name is its executable's name.
+        let chrome = common::chrome_path();
+        let name = chrome.file_name().unwrap().to_str().unwrap();
+        assert_eq!(window["process"], name);
         let pid = window["pid"].as_u64().unwrap().to_string();
         let alive = std::process::Command::new("kill")
             .args(["-0", &pid])
@@ -405,18 +418,36 @@ mod on_macos {
     #[test]
     #[ignore]
     fn monitor_recording_has_the_monitor_size() {
-        let monitors = ok(&recdr().arg("monitors").output().unwrap());
-        let bounds = &monitors["monitors"][0]["bounds"];
+        // The size macOS's own screenshot of the main display has, which does not go
+        // through recdr's scale code.
+        let shot =
+            std::env::temp_dir().join(format!("recdr-main-display-{}.png", std::process::id()));
+        let status = std::process::Command::new("screencapture")
+            .args(["-x", "-D", "1"])
+            .arg(&shot)
+            .status()
+            .unwrap();
+        assert!(status.success(), "screencapture failed");
+        let expected = image::image_dimensions(&shot).unwrap();
+        let _ = std::fs::remove_file(&shot);
         let result = ok(&record("monitor", &["--monitor", "0", "--duration", "2s"]));
         assert!(result["frames_stored"].as_u64().unwrap() >= 1);
         for frame in stored_frames(&result) {
-            assert_eq!(
-                (u64::from(frame.width()), u64::from(frame.height())),
-                (
-                    bounds["width"].as_u64().unwrap(),
-                    bounds["height"].as_u64().unwrap()
-                )
-            );
+            assert_eq!(frame.dimensions(), expected);
+        }
+    }
+
+    /// Criterion 5, the size half. It needs nothing on the screen, so CI runs it where the
+    /// color half below is skipped.
+    #[test]
+    #[ignore]
+    fn region_recording_is_the_region_size() {
+        let args = ["--region", "0,0,400,300", "--duration", "2s"];
+        let result = ok(&record("region-size", &args));
+        let frames = stored_frames(&result);
+        assert!(!frames.is_empty());
+        for frame in frames {
+            assert_eq!((frame.width(), frame.height()), (400, 300));
         }
     }
 

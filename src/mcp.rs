@@ -191,11 +191,13 @@ impl RecdrServer {
             )?;
             let out = request::resolve_out(params.out)?;
             let max_width = params.max_width.unwrap_or(DEFAULT_MAX_WIDTH);
-            let list = control::frames(&out, &params.id, &selection, Some(max_width))?;
-            if list.frames.len() > MAX_FRAMES {
-                return Err(Error::TooManyFrames(list.frames.len()));
-            }
-            Ok(list)
+            control::frames(
+                &out,
+                &params.id,
+                &selection,
+                Some(max_width),
+                Some(MAX_FRAMES),
+            )
         });
         Ok(reply(frames.await, |list| {
             list.frames
