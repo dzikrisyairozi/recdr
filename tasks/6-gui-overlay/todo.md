@@ -322,5 +322,6 @@ cargo test
   - Scope: S
 
 ### Checkpoint D: complete
-- [ ] The three CI jobs are green.
+- [x] The three CI jobs are green.
+  - 2026-11-20: run 44688618955, all three jobs green, after the macOS work was merged in.
 - [ ] `acceptance.md` has a result for each of the 23 criteria.
