@@ -895,6 +895,32 @@ fn no_click_highlight_installs_nothing() {
     assert_eq!(client.eval(&session, typeof_binding), "undefined");
 }
 
+/// The page can call the binding itself. A flood of calls, some far outside the page,
+/// neither stops the frames nor fills the manifest.
+#[test]
+#[ignore]
+fn a_page_flooding_the_click_binding_is_bounded() {
+    let browser = Browser::start("click-flood", &[]);
+    let (mut client, tab, session) = tab_showing(&browser, "/anim");
+    let child = spawn_record(
+        &browser,
+        &out_dir("click-flood"),
+        &["--tab-id", &tab, "--duration", "3s"],
+    );
+    let flood = r#"for (let i = 0; i < 20000; i++) {
+        __recdrClick(JSON.stringify({x: i % 2 ? 1e300 : 5, y: 5, button: 0, w: innerWidth, h: innerHeight}));
+    } "sent""#;
+    assert_eq!(client.eval(&session, flood), "sent");
+    let result = ok(&child.wait_with_output().unwrap());
+    let clicks = manifest_of(&result)["clicks"].as_array().unwrap().len();
+    // At most one press per 20 ms is kept, and none outside the frame.
+    assert!(clicks <= 3000 / 20 + 1, "{clicks} clicks kept");
+    assert!(result["frames_stored"].as_u64().unwrap() >= 10, "{result}");
+    for click in manifest_of(&result)["clicks"].as_array().unwrap() {
+        assert!(click["x"].as_i64().unwrap() < result["width"].as_i64().unwrap());
+    }
+}
+
 /// Success criterion 16.
 #[test]
 #[ignore]

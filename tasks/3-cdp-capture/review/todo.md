@@ -4,7 +4,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
 
 ## Phase 1: Important
 
-- [ ] Task 1: Bound what the click binding accepts
+- [x] Task 1: Bound what the click binding accepts
   - Finding: Important — src/capture/cdp.rs:347
   - Acceptance: an off-frame or huge press yields no click; a flood of binding calls is capped and frames keep arriving
   - Verify: unit tests on `click()`; browser test with a page that calls `__recdrClick` in a loop

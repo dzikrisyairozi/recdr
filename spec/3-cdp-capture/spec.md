@@ -172,6 +172,7 @@ A tab recording has no mouse cursor, and the Windows mouse hook cannot see click
 - The script is registered to run in each new document, and recdr adds the binding again each time the tab's main frame navigates (measured fact 9). A press in the few milliseconds between a navigation and the binding being added again is missed.
 - Positions arrive in CSS pixels relative to the viewport. recdr multiplies x by frame width over viewport width, and y by frame height over viewport height, using the size of the latest frame. The manifest stores clicks in frame pixels, as in the first spec.
 - Buttons 0, 1 and 2 are stored as `left`, `middle` and `right`. Other buttons are ignored.
+- The page can call the binding itself, so its reports are not trusted: a press whose position falls outside the frame is dropped, as the desktop sources drop one outside the captured area, and a press less than 20 ms after the last kept one is dropped.
 - Rings are drawn at encode time and on the contact sheet, never into stored frames, as in the first spec.
 - When the recording ends, recdr removes the binding and the new-document script. The listener stays in the document that is open at that moment and does nothing; it is gone after the next navigation.
 - `--no-click-highlight` installs nothing in the page. The manifest then has no clicks.

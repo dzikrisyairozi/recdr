@@ -35,6 +35,9 @@ const MAX_MESSAGE_BYTES: usize = 256 << 20;
 const MAX_HTTP_BYTES: usize = 1 << 20;
 /// The page calls this to report a mouse press.
 const BINDING: &str = "__recdrClick";
+/// Presses closer together than this are one press repeated, or a page calling the
+/// binding in a loop; the first is kept.
+const MIN_CLICK_GAP_MS: u64 = 20;
 
 /// Runs in the recorded tab. Reports top-level mouse presses through the binding;
 /// does nothing in iframes, or once the binding is gone.
@@ -78,6 +81,9 @@ pub struct CdpSource {
     /// Size of the latest frame handed out, for scaling clicks.
     frame_size: Option<(u32, u32)>,
     clicks: VecDeque<CaptureEvent>,
+    /// When the last press was kept. Presses closer than `MIN_CLICK_GAP_MS` are dropped,
+    /// so a page calling the binding in a loop cannot flood the recording.
+    last_click_ms: u64,
     /// Identifier of the new-document script, when clicks are reported.
     click_script: Option<String>,
 }
@@ -121,6 +127,7 @@ impl CdpSource {
             release_at: Instant::now(),
             holding: false,
             frame_size: None,
+            last_click_ms: 0,
             clicks: VecDeque::new(),
             click_script: None,
         };
@@ -193,8 +200,13 @@ impl CdpSource {
                 frame,
             )
         {
+            let unix_ms = time::now_unix_ms();
+            if unix_ms < self.last_click_ms + MIN_CLICK_GAP_MS {
+                return Ok(None);
+            }
+            self.last_click_ms = unix_ms;
             self.clicks.push_back(CaptureEvent::Click {
-                unix_ms: time::now_unix_ms(),
+                unix_ms,
                 x,
                 y,
                 button,
@@ -343,9 +355,12 @@ fn click(payload: &str, frame: (u32, u32)) -> Option<(i32, i32, &'static str)> {
         2 => "right",
         _ => return None,
     };
-    let x = (number("x")? * f64::from(frame.0) / w).round() as i32;
-    let y = (number("y")? * f64::from(frame.1) / h).round() as i32;
-    Some((x, y, button))
+    // The page can call the binding itself, so a press outside the picture is dropped,
+    // as the desktop sources drop one outside the captured area.
+    let x = (number("x")? * f64::from(frame.0) / w).round();
+    let y = (number("y")? * f64::from(frame.1) / h).round();
+    let inside = (0.0..f64::from(frame.0)).contains(&x) && (0.0..f64::from(frame.1)).contains(&y);
+    inside.then_some((x as i32, y as i32, button))
 }
 
 /// A base64 PNG to an RGBA frame.
@@ -714,6 +729,11 @@ mod tests {
         assert_eq!(click(&press(3, 1264), frame), None);
         assert_eq!(click(&press(0, 0), frame), None);
         assert_eq!(click("not json", frame), None);
+        let at = |x: &str, y: &str| format!(r#"{{"x":{x},"y":{y},"button":0,"w":1264,"h":625}}"#);
+        assert_eq!(click(&at("1e300", "5"), frame), None);
+        assert_eq!(click(&at("-1", "5"), frame), None);
+        assert_eq!(click(&at("5", "625"), frame), None);
+        assert_eq!(click(&at("1263", "624"), frame), Some((2526, 1248, "left")));
     }
 
     #[test]
