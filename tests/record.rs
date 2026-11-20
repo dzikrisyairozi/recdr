@@ -71,7 +71,7 @@ fn moving_for_one_second() {
             break (result, out, manifest);
         }
         assert!(attempt < 2, "twice: {message}");
-        eprintln!("attempt {attempt}: {message}");
+        eprintln!("::warning::attempt {attempt}: {message}");
     };
     assert_eq!(result["stop_reason"], "duration_reached");
     assert_eq!(result["width"], 320);

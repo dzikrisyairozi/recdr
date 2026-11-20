@@ -33,7 +33,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: `--cdp <port>` refuses a `webSocketDebuggerUrl` with a remote host
   - Verify: test with a local listener that names a remote host
   - Files: src/capture/cdp.rs
-- [ ] Task 6: Make a used retry visible, and give `dropped_frames` a way to fail
+- [x] Task 6: Make a used retry visible, and give `dropped_frames` a way to fail
   - Finding: Suggestion — tests/browser.rs:449
   - Acceptance: a short first attempt prints `::warning::` in CI; the animation test asserts on the real drop counter
   - Verify: force a short first attempt locally

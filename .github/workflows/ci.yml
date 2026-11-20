@@ -22,6 +22,6 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       # One test at a time: the recording tests measure frame rates, and the macOS
       # runner's three cores cannot keep sixteen parallel recorders at 15 fps.
-      - run: cargo test -- --test-threads=1
+      - run: cargo test -- --test-threads=1 --show-output
       # Headless Chrome, which every runner image has. One at a time for the same reason.
-      - run: cargo test --test browser -- --ignored --test-threads=1
+      - run: cargo test --test browser -- --ignored --test-threads=1 --show-output
