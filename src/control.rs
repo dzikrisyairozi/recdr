@@ -166,6 +166,11 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
             return Ok(result);
         }
         if derived_status(dir)? == Status::Crashed {
+            // The recorder writes its result and then exits, so it may have done both
+            // since the read above; only a recorder gone with no result crashed.
+            if let Some(result) = dir.read_result()? {
+                return Ok(result);
+            }
             return Err(Error::RecorderCrashed(dir.id().to_owned()));
         }
         thread::sleep(POLL);
