@@ -186,7 +186,11 @@ impl CdpSource {
             return Ok(None);
         }
         if method == "Page.screencastFrame" {
-            let data = incoming.params["data"].take();
+            // Taken, not copied: a 1080p PNG is several megabytes of base64.
+            let data = match incoming.params["data"].take() {
+                Value::String(data) => data,
+                _ => String::new(),
+            };
             // A browser sends at most three frames unacknowledged, but a page that reloads
             // itself restarts the count each time, and an endpoint can ignore acks. Past
             // MAX_WAITING frames are counted as dropped; the id is still acknowledged.
@@ -194,7 +198,7 @@ impl CdpSource {
                 self.dropped += 1;
             } else {
                 self.to_decoder
-                    .send(data.as_str().unwrap_or_default().to_owned())
+                    .send(data)
                     .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
                 self.decoding += 1;
                 self.arrivals.push_back(Instant::now());

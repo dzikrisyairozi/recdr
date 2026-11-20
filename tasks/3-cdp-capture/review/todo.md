@@ -14,7 +14,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: at most four frames wait; `dropped()` reports the rest; criterion 4 still holds
   - Verify: unit test with more than four decoded frames; `animation_keeps_fifteen_frames_per_second`
   - Files: src/capture/cdp.rs, spec/3-cdp-capture/spec.md
-- [ ] Checkpoint: fmt, clippy, tests, browser tests and CI green
+- [x] Checkpoint: fmt, clippy, tests, browser tests and CI green (local only; CI runs once pushed)
 
 ## Phase 2: Suggestions
 
@@ -38,9 +38,9 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: a short first attempt prints `::warning::` in CI; the animation test asserts on the real drop counter
   - Verify: force a short first attempt locally
   - Files: tests/browser.rs, tests/record.rs, .github/workflows/ci.yml
-- [ ] Task 7: Move the frame's base64 text
+- [x] Task 7: Move the frame's base64 text
   - Finding: Suggestion — src/capture/cdp.rs:170
   - Acceptance: `handle` takes the `data` string without copying it
   - Verify: browser tests
   - Files: src/capture/cdp.rs
-- [ ] Checkpoint: all green; the spec's frame-rate paragraph and "Clicks" section match the code
+- [x] Checkpoint: all green; the spec's frame-rate paragraph and "Clicks" section match the code

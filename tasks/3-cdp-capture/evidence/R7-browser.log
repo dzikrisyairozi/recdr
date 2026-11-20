@@ -1,0 +1,20 @@
+> cargo test --test browser -- --ignored --test-threads=1
+test a_page_flooding_the_click_binding_is_bounded ... ok
+test animation_keeps_fifteen_frames_per_second ... ok
+test background_tab_is_recorded ... ok
+test closing_the_tab_ends_with_tab_closed ... ok
+test ending_the_browser_ends_with_tab_closed ... ok
+test mcp_records_a_tab ... ok
+test minimized_window_is_recorded ... ok
+test navigation_does_not_end_the_recording ... ok
+test no_click_highlight_installs_nothing ... ok
+test press_is_recorded_in_frame_pixels ... ok
+test records_a_tab_at_its_viewport_size ... ok
+test renderer_crash_probe ... ok
+test start_mark_stop_frames_on_a_tab ... ok
+test still_page_stores_one_or_two_frames ... ok
+test tab_text_matches_title_and_url ... ok
+test tabs_lists_only_pages ... ok
+test tabs_through_each_endpoint_form ... ok
+test wraps_a_command_while_recording_a_tab ... ok
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 276.24s
