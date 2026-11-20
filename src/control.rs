@@ -168,11 +168,13 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
 }
 
 /// Stored frames of a finished recording, picked by time, interval or keyframe.
+/// More than `max_count` picked is `TooManyFrames`, before any sample is written.
 pub fn frames(
     out: &Path,
     id: &str,
     selection: &FrameSelection,
     max_width: Option<u32>,
+    max_count: Option<usize>,
 ) -> Result<FrameList> {
     let dir = RecordingDir::open(out, id)?;
     if dir.read_result()?.is_none() {
@@ -181,6 +183,11 @@ pub fn frames(
     let manifest = dir.read_manifest()?;
     let diffs = dir.read_diff()?;
     let entries = analyze::select::select(&manifest, &diffs, selection);
+    if let Some(max) = max_count
+        && entries.len() > max
+    {
+        return Err(Error::TooManyFrames(entries.len()));
+    }
     Ok(FrameList {
         frames: analyze::select::frame_refs(&dir, &entries, max_width)?,
     })

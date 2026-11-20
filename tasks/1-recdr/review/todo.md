@@ -9,7 +9,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: a detached recording whose MP4 step fails returns `encode_failed` from `stop`, not `recorder_crashed`
   - Verify: new test in `tests/record.rs`; `rtk proxy cargo test`
   - Files: src/control.rs, tests/record.rs
-- [ ] Task 2: Check the MCP frame limit before any sample is written
+- [x] Task 2: Check the MCP frame limit before any sample is written
   - Finding: Important — src/mcp.rs:175
   - Acceptance: `get_frames` over the limit returns `too_many_frames` and `samples/` stays empty
   - Verify: `rtk proxy cargo test --test mcp`
