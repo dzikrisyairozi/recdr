@@ -68,6 +68,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "apple-cf"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a47effd5b5e7afd1c51ef8d1bacf86060565461c1fb6cf67aae433417c4048c"
+dependencies = [
+ "doom-fish-utils",
+]
+
+[[package]]
+name = "apple-metal"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5ecd43c9a8443c6ea515108326330313d6390a0383152e6c2db7b776123974"
+dependencies = [
+ "doom-fish-utils",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -323,6 +341,12 @@ dependencies = [
  "const-oid",
  "crypto-common",
 ]
+
+[[package]]
+name = "doom-fish-utils"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b17b6b508be066ed1f17547113c170b9105d9b7d9ba0a9c86b6dc767167ec0f3"
 
 [[package]]
 name = "dyn-clone"
@@ -677,6 +701,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-core-foundation"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
+name = "objc2-core-graphics"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
+dependencies = [
+ "bitflags",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -819,8 +862,11 @@ dependencies = [
  "gif",
  "image",
  "libc",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
  "rmcp",
  "schemars",
+ "screencapturekit",
  "serde",
  "serde_json",
  "thiserror",
@@ -936,6 +982,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "screencapturekit"
+version = "11.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da7669c5c60db0a577c464ddfd111e9823c4572a7966a25b31688bbf7cff3d58"
+dependencies = [
+ "apple-cf",
+ "apple-metal",
+]
 
 [[package]]
 name = "serde"

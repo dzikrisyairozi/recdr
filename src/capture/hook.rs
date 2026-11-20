@@ -12,19 +12,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_MBUTTONDOWN, WM_QUIT, WM_RBUTTONDOWN,
 };
 
+use super::Press;
 use crate::error::{Error, Result};
 use crate::time;
 
-/// Wall-clock milliseconds, virtual-screen x and y, button.
-pub type RawClick = (u64, i32, i32, &'static str);
-
 /// The hook procedure has no user data pointer, so it reaches the recorder through this.
-static SENDER: Mutex<Option<Sender<RawClick>>> = Mutex::new(None);
+static SENDER: Mutex<Option<Sender<Press>>> = Mutex::new(None);
 
 pub struct ClickHook {
     thread: Option<JoinHandle<()>>,
     thread_id: u32,
-    clicks: Receiver<RawClick>,
+    clicks: Receiver<Press>,
 }
 
 impl ClickHook {
@@ -60,7 +58,7 @@ impl ClickHook {
     }
 
     /// The next press the hook has seen, without waiting.
-    pub fn try_next(&self) -> Option<RawClick> {
+    pub fn try_next(&self) -> Option<Press> {
         self.clicks.try_recv().ok()
     }
 }
@@ -115,7 +113,12 @@ unsafe extern "system" fn on_mouse(code: i32, wparam: WPARAM, lparam: LPARAM) ->
             // that is valid for the duration of this call.
             let point = unsafe { (*(lparam.0 as *const MSLLHOOKSTRUCT)).pt };
             if let Some(sender) = SENDER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-                let _ = sender.send((time::now_unix_ms(), point.x, point.y, button));
+                let _ = sender.send((
+                    time::now_unix_ms(),
+                    f64::from(point.x),
+                    f64::from(point.y),
+                    button,
+                ));
             }
         }
     }

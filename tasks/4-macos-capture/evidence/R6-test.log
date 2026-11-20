@@ -1,0 +1,29 @@
+> cargo fmt --check
+exit: 0
+> cargo clippy --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.99s
+> cargo test 
+     Running unittests src\lib.rs (target\debug\deps\recdr-4b4b7175a989f05b.exe)
+test result: ok. 77 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.01s
+     Running unittests src\main.rs (target\debug\deps\recdr-9e360786e00e8aac.exe)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\browser.rs (target\debug\deps\browser-4126214b7736b535.exe)
+test result: ok. 0 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\cli.rs (target\debug\deps\cli-9fc96069ea093c69.exe)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+     Running tests\control.rs (target\debug\deps\control-3c037c90df74f90f.exe)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.20s
+     Running tests\desktop.rs (target\debug\deps\desktop-ff8481efdb011818.exe)
+test result: ok. 0 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\frames.rs (target\debug\deps\frames-a40e53192fc45b89.exe)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.80s
+     Running tests\layers.rs (target\debug\deps\layers-9eca64eb02864335.exe)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests\mcp.rs (target\debug\deps\mcp-cc0332c99f463e03.exe)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+     Running tests\record.rs (target\debug\deps\record-e4db3969be789622.exe)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.81s
+     Running tests\tabs.rs (target\debug\deps\tabs-0f4d5424182d436b.exe)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.23s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit: 0

@@ -22,7 +22,7 @@ use windows_capture::settings::{
 use windows_capture::window::Window;
 
 use super::CaptureSource;
-use super::hook::{ClickHook, RawClick};
+use super::hook::ClickHook;
 use crate::error::{Error, Result};
 use crate::model::{
     CaptureEvent, Frame, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, WindowInfo,
@@ -188,20 +188,6 @@ pub struct WgcSource {
     size: Option<(u32, u32)>,
 }
 
-/// A press in virtual-screen coordinates to a click event relative to the captured
-/// area, or None when it is outside the area.
-fn to_event(click: RawClick, origin: (i32, i32), size: (u32, u32)) -> Option<CaptureEvent> {
-    let (unix_ms, x, y, button) = click;
-    let (x, y) = (x - origin.0, y - origin.1);
-    let inside = (0..size.0 as i32).contains(&x) && (0..size.1 as i32).contains(&y);
-    inside.then_some(CaptureEvent::Click {
-        unix_ms,
-        x,
-        y,
-        button,
-    })
-}
-
 impl WgcSource {
     pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool, clicks: bool) -> Result<Self> {
         let (events_tx, events) = mpsc::sync_channel(8);
@@ -286,7 +272,13 @@ impl CaptureSource for WgcSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
         if let (Some(hook), Some(size)) = (&self.hook, self.size) {
             while let Some(click) = hook.try_next() {
-                if let Some(event) = to_event(click, self.origin, size) {
+                let event = super::to_event(
+                    click,
+                    (f64::from(self.origin.0), f64::from(self.origin.1)),
+                    size,
+                    1.0,
+                );
+                if let Some(event) = event {
                     return Ok(Some(event));
                 }
             }
@@ -318,34 +310,6 @@ impl Drop for WgcSource {
         // `stop` consumes the control, hence the Option.
         if let Some(control) = self.control.take() {
             let _ = control.stop();
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn to_event_keeps_presses_inside_the_area() {
-        let at = |x, y| to_event((7, x, y, "left"), (100, 50), (640, 480));
-        let point = |event: Option<CaptureEvent>| match event {
-            Some(CaptureEvent::Click {
-                unix_ms,
-                x,
-                y,
-                button,
-            }) => {
-                assert_eq!((unix_ms, button), (7, "left"));
-                Some((x, y))
-            }
-            None => None,
-            Some(other) => panic!("{other:?}"),
-        };
-        assert_eq!(point(at(100, 50)), Some((0, 0)));
-        assert_eq!(point(at(739, 529)), Some((639, 479)));
-        for (x, y) in [(740, 50), (99, 50), (100, 530)] {
-            assert_eq!(point(at(x, y)), None, "({x}, {y})");
         }
     }
 }

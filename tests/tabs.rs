@@ -145,7 +145,7 @@ fn record_and_start_on_a_closed_port_fail_to_connect() {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod unsupported {
     use super::{json, recdr};
 

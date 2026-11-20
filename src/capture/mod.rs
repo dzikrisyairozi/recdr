@@ -4,6 +4,10 @@ mod cdp;
 mod fake;
 #[cfg(windows)]
 mod hook;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+mod tap;
 #[cfg(windows)]
 mod windows;
 
@@ -37,6 +41,90 @@ pub trait CaptureSource {
     }
 }
 
+/// A mouse press as the system reports it: wall-clock milliseconds, x and y in the
+/// system's screen units (pixels on Windows, points on macOS), button.
+pub type Press = (u64, f64, f64, &'static str);
+
+/// A press to a click event relative to the captured area in pixels, or None when it
+/// is outside. `origin` is the area's top-left corner in the press's units, `size` is
+/// the area in pixels, and `scale` is pixels per unit.
+pub fn to_event(
+    press: Press,
+    origin: (f64, f64),
+    size: (u32, u32),
+    scale: f64,
+) -> Option<CaptureEvent> {
+    let (unix_ms, x, y, button) = press;
+    let x = ((x - origin.0) * scale).floor();
+    let y = ((y - origin.1) * scale).floor();
+    let inside = (0.0..f64::from(size.0)).contains(&x) && (0.0..f64::from(size.1)).contains(&y);
+    inside.then_some(CaptureEvent::Click {
+        unix_ms,
+        x: x as i32,
+        y: y as i32,
+        button,
+    })
+}
+
+/// A display as macOS reports it: position and size in points, and pixels per point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Display {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub scale: f64,
+}
+
+/// The `bounds` of each display in pixels, in the same order. Positions are scaled by
+/// the largest scale so that displays of different scales do not overlap.
+pub fn display_bounds(displays: &[Display]) -> Vec<Rect> {
+    let s = displays.iter().map(|d| d.scale).fold(0.0, f64::max);
+    displays
+        .iter()
+        .map(|d| Rect {
+            x: (d.x * s).round() as i32,
+            y: (d.y * s).round() as i32,
+            width: (d.width * d.scale).round() as u32,
+            height: (d.height * d.scale).round() as u32,
+        })
+        .collect()
+}
+
+/// A rectangle in points to pixels, on the display that holds its center (the first
+/// display when none does).
+pub fn to_pixels(displays: &[Display], x: f64, y: f64, width: f64, height: f64) -> Rect {
+    let (cx, cy) = (x + width / 2.0, y + height / 2.0);
+    let i = displays
+        .iter()
+        .position(|d| d.x <= cx && cx < d.x + d.width && d.y <= cy && cy < d.y + d.height)
+        .unwrap_or(0);
+    let (Some(&d), Some(&b)) = (displays.get(i), display_bounds(displays).get(i)) else {
+        return Rect {
+            x: x.round() as i32,
+            y: y.round() as i32,
+            width: width.round() as u32,
+            height: height.round() as u32,
+        };
+    };
+    Rect {
+        x: b.x + ((x - d.x) * d.scale).round() as i32,
+        y: b.y + ((y - d.y) * d.scale).round() as i32,
+        width: (width * d.scale).round() as u32,
+        height: (height * d.scale).round() as u32,
+    }
+}
+
+/// A rectangle in pixels, relative to a display's corner, to points relative to the same corner.
+pub fn to_points(crop: &Rect, scale: f64) -> (f64, f64, f64, f64) {
+    (
+        f64::from(crop.x) / scale,
+        f64::from(crop.y) / scale,
+        f64::from(crop.width) / scale,
+        f64::from(crop.height) / scale,
+    )
+}
+
 /// `clicks` asks the source to report presses; the synthetic source ignores it.
 pub fn open(
     resolved: &ResolvedTarget,
@@ -68,7 +156,19 @@ fn desktop_source(
     )?))
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn desktop_source(
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Ok(Box::new(macos::SckSource::open(
+        resolved, fps, cursor, clicks,
+    )?))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn desktop_source(
     _resolved: &ResolvedTarget,
     _fps: u32,
@@ -88,7 +188,12 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
     windows::list_windows()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    macos::list_windows()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     Err(Error::UnsupportedPlatform)
 }
@@ -98,7 +203,12 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     windows::list_monitors()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
+    macos::list_monitors()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     Err(Error::UnsupportedPlatform)
 }
@@ -375,6 +485,118 @@ mod tests {
     fn region_crossing_monitors_is_out_of_bounds() {
         let err = resolve_with(Target::Region(rect(1800, 0, 400, 400))).unwrap_err();
         assert_eq!(err.code(), "region_out_of_bounds");
+    }
+
+    fn click_at(event: Option<CaptureEvent>) -> Option<(i32, i32)> {
+        match event {
+            Some(CaptureEvent::Click {
+                unix_ms,
+                x,
+                y,
+                button,
+            }) => {
+                assert_eq!((unix_ms, button), (7, "left"));
+                Some((x, y))
+            }
+            None => None,
+            Some(other) => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn to_event_keeps_presses_inside_the_area_at_scale_1() {
+        let at = |x: f64, y: f64| to_event((7, x, y, "left"), (100.0, 200.0), (50, 50), 1.0);
+        assert_eq!(click_at(at(110.0, 220.0)), Some((10, 20)));
+        assert_eq!(click_at(at(100.0, 200.0)), Some((0, 0)));
+        assert_eq!(click_at(at(149.0, 249.0)), Some((49, 49)));
+        for (x, y) in [(99.0, 220.0), (150.0, 220.0), (110.0, 250.0)] {
+            assert_eq!(click_at(at(x, y)), None, "({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn to_event_scales_points_to_pixels() {
+        let at = |x: f64, y: f64| to_event((7, x, y, "left"), (100.0, 200.0), (100, 100), 2.0);
+        assert_eq!(click_at(at(110.5, 220.0)), Some((21, 40)));
+        assert_eq!(click_at(at(150.0, 220.0)), None);
+    }
+
+    fn display(x: f64, y: f64, width: f64, height: f64, scale: f64) -> Display {
+        Display {
+            x,
+            y,
+            width,
+            height,
+            scale,
+        }
+    }
+
+    /// A 2x laptop display with a 1x display to its right.
+    fn retina_then_plain() -> Vec<Display> {
+        vec![
+            display(0.0, 0.0, 1512.0, 982.0, 2.0),
+            display(1512.0, 0.0, 1920.0, 1080.0, 1.0),
+        ]
+    }
+
+    /// A 1x display with a 2x display to its right.
+    fn plain_then_retina() -> Vec<Display> {
+        vec![
+            display(0.0, 0.0, 1920.0, 1080.0, 1.0),
+            display(1920.0, 0.0, 1512.0, 982.0, 2.0),
+        ]
+    }
+
+    #[test]
+    fn one_retina_display_is_in_pixels() {
+        let displays = [display(0.0, 0.0, 1512.0, 982.0, 2.0)];
+        assert_eq!(display_bounds(&displays), [rect(0, 0, 3024, 1964)]);
+    }
+
+    #[test]
+    fn display_bounds_do_not_overlap_either_way_round() {
+        assert_eq!(
+            display_bounds(&retina_then_plain()),
+            [rect(0, 0, 3024, 1964), rect(3024, 0, 1920, 1080)]
+        );
+        assert_eq!(
+            display_bounds(&plain_then_retina()),
+            [rect(0, 0, 1920, 1080), rect(3840, 0, 3024, 1964)]
+        );
+    }
+
+    #[test]
+    fn a_rectangle_inside_each_display_goes_to_pixels_and_back() {
+        for displays in [retina_then_plain(), plain_then_retina()] {
+            for (d, b) in displays.iter().zip(display_bounds(&displays)) {
+                let r = to_pixels(&displays, d.x + 10.0, d.y + 10.0, 100.0, 50.0);
+                assert!(contains(&b, &r), "{r:?} is not inside {b:?}");
+                let crop = Rect {
+                    x: r.x - b.x,
+                    y: r.y - b.y,
+                    ..r
+                };
+                assert_eq!(to_points(&crop, d.scale), (10.0, 10.0, 100.0, 50.0));
+            }
+        }
+    }
+
+    #[test]
+    fn a_rectangle_on_no_display_is_placed_on_the_first() {
+        let r = to_pixels(&retina_then_plain(), -500.0, -500.0, 100.0, 50.0);
+        assert_eq!(r, rect(-1000, -1000, 200, 100));
+    }
+
+    #[test]
+    fn a_center_on_a_shared_edge_belongs_to_the_display_that_starts_there() {
+        // Center x is 1512, where the 1x display starts.
+        let r = to_pixels(&retina_then_plain(), 1462.0, 10.0, 100.0, 50.0);
+        assert_eq!(r, rect(2974, 10, 100, 50));
+    }
+
+    #[test]
+    fn with_no_displays_points_are_rounded_as_they_are() {
+        assert_eq!(to_pixels(&[], 1.4, 2.6, 10.5, 3.2), rect(1, 3, 11, 3));
     }
 
     #[test]

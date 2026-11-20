@@ -31,3 +31,11 @@ jobs:
       - name: browser tests (not required)
         continue-on-error: true
         run: cargo test --test browser -- --ignored --test-threads=1 --show-output
+      # The desktop tests record the runner's screen; Task 4 of macos-capture showed a
+      # ScreenCaptureKit stream delivers frames on the hosted macOS runner.
+      # It runs whatever the browser step did.
+      - if: runner.os == 'macOS' && !cancelled()
+        # The green region test is skipped here by the owner's decision: on the runner the
+        # screen itself shows the page pale at that point (acceptance.md, criterion 5).
+        # region_recording_is_the_region_size still checks that criterion's 400x300 size.
+        run: cargo test --test desktop -- --ignored --test-threads=1 --show-output --skip region_inside_the_green_page_is_green
