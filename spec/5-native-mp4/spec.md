@@ -11,7 +11,7 @@ Depends on `agent-recorder` ([spec](../1-recdr/spec-agent-recorder.md), pull req
 - **Stored frame**, **manifest**, **click ring**: as in the first spec. A stored frame is a PNG that recdr wrote because the screen changed. The manifest is the JSON file that lists the stored frames, their times and the clicks. A click ring is the circle drawn at a click in a GIF or MP4, and never in a stored frame.
 - **Video frame**: one picture of the finished video. Stored frames are irregular in time, so the encoder repeats them to fill a constant frame rate. (The code has a type `OutFrame` in `src/encode/mod.rs`, which is something else: one stretch of the recording during which the picture does not change. It keeps its name and its meaning.)
 - **Even size**: a width and a height that are both multiples of 2. H.264 with the usual color format needs that.
-- **Test recording**: a recording directory that a unit test builds by hand from pictures it chooses, with the helper `one_frame` that `src/encode/mod.rs` has today for its own tests.
+- **Test recording**: a recording directory that a unit test builds by hand from pictures it chooses, with the helper `recording` in the tests of `src/encode/mod.rs` (`one_frame` calls it).
 
 ## Objective
 
@@ -111,7 +111,7 @@ Nothing else changes.
 ## Project structure
 
 ```
-src/encode/mod.rs        Changed. Picks the encoder for the system; receives the video-frame loop from ffmpeg.rs; pads to an even size. Its test helper one_frame learns to take a picture and a size
+src/encode/mod.rs        Changed. Picks the encoder for the system; receives the video-frame loop from ffmpeg.rs; pads to an even size. Its tests get a helper recording(name, image, duration_ms, fps, clicks); one_frame stays as a wrapper around it
 src/encode/ffmpeg.rs     Changed. Keeps starting ffmpeg; the loop and the pad filter leave. Compiled on Linux only
 src/encode/mf.rs         New. Windows: hands video frames to windows_capture::encoder
 src/encode/avf.rs        New. macOS: hands video frames to AVAssetWriter

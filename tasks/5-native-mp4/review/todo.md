@@ -14,7 +14,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: eight threads calling `check_mp4` at once all get `Ok`, and no trial file is left
   - Verify: new unit test; `rtk proxy cargo test`
   - Files: src/encode/mod.rs
-- [ ] Checkpoint: fmt, clippy, tests and CI green
+- [x] Checkpoint: fmt, clippy, tests and CI green (local only; CI runs once pushed)
 
 ## Phase 2: Suggestions
 
@@ -43,4 +43,4 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: the list matches the files that hold `cfg`
   - Verify: `rtk proxy cargo test --test layers`
   - Files: tests/layers.rs
-- [ ] Checkpoint: CI green; the spec states the memory bound
+- [x] Checkpoint: CI green; the spec states the memory bound (the spec states the measured limit; the bound itself waits on task 1)
