@@ -38,6 +38,9 @@ const BINDING: &str = "__recdrClick";
 /// Presses closer together than this are one press repeated, or a page calling the
 /// binding in a loop; the first is kept.
 const MIN_CLICK_GAP_MS: u64 = 20;
+/// Frames decoding or decoded and not yet handed out. A browser that respects acks
+/// never has more than three.
+const MAX_WAITING: usize = 4;
 
 /// Runs in the recorded tab. Reports top-level mouse presses through the binding;
 /// does nothing in iframes, or once the binding is gone.
@@ -84,6 +87,8 @@ pub struct CdpSource {
     /// When the last press was kept. Presses closer than `MIN_CLICK_GAP_MS` are dropped,
     /// so a page calling the binding in a loop cannot flood the recording.
     last_click_ms: u64,
+    /// Frames not decoded because `MAX_WAITING` were already waiting.
+    dropped: u64,
     /// Identifier of the new-document script, when clicks are reported.
     click_script: Option<String>,
 }
@@ -128,6 +133,7 @@ impl CdpSource {
             holding: false,
             frame_size: None,
             last_click_ms: 0,
+            dropped: 0,
             clicks: VecDeque::new(),
             click_script: None,
         };
@@ -175,10 +181,17 @@ impl CdpSource {
         }
         if method == "Page.screencastFrame" {
             let data = incoming.params["data"].take();
-            self.to_decoder
-                .send(data.as_str().unwrap_or_default().to_owned())
-                .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
-            self.decoding += 1;
+            // A browser sends at most three frames unacknowledged, but a page that reloads
+            // itself restarts the count each time, and an endpoint can ignore acks. Past
+            // MAX_WAITING frames are counted as dropped; the id is still acknowledged.
+            if self.decoding + self.held.len() >= MAX_WAITING {
+                self.dropped += 1;
+            } else {
+                self.to_decoder
+                    .send(data.as_str().unwrap_or_default().to_owned())
+                    .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
+                self.decoding += 1;
+            }
             if let Some(id) = incoming.params["sessionId"].as_i64() {
                 self.unacked.push(id);
             }
@@ -283,7 +296,7 @@ impl CaptureSource for CdpSource {
     }
 
     fn dropped(&self) -> u64 {
-        0
+        self.dropped
     }
 
     fn paced(&self) -> bool {

@@ -9,7 +9,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: an off-frame or huge press yields no click; a flood of binding calls is capped and frames keep arriving
   - Verify: unit tests on `click()`; browser test with a page that calls `__recdrClick` in a loop
   - Files: src/capture/cdp.rs, tests/browser.rs, spec/3-cdp-capture/spec.md
-- [ ] Task 2: Bound the held frames and count the ones dropped
+- [x] Task 2: Bound the held frames and count the ones dropped
   - Finding: Important — src/capture/cdp.rs:240
   - Acceptance: at most four frames wait; `dropped()` reports the rest; criterion 4 still holds
   - Verify: unit test with more than four decoded frames; `animation_keeps_fifteen_frames_per_second`
