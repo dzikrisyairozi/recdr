@@ -327,14 +327,15 @@ fn export_replaces_only_on_success() {
     assert_eq!(error_code(&failed), "usage");
     assert_eq!(std::fs::read(&file).unwrap(), written);
 
-    // An encoder that fails part way: a stored frame is gone.
+    // An encoder that fails: a stored frame is gone. The first one, because it is shown
+    // from 0 ms; the last can be stamped at the recording's end and never be read.
     let frames = out.join(&id).join("frames");
-    let last = std::fs::read_dir(&frames)
+    let first = std::fs::read_dir(&frames)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .max()
+        .min()
         .unwrap();
-    std::fs::remove_file(last).unwrap();
+    std::fs::remove_file(first).unwrap();
     let failed = export(&out, &id, &["--file", file.to_str().unwrap()]);
     assert_eq!(error_code(&failed), "encode_failed");
     assert_eq!(std::fs::read(&file).unwrap(), written);
