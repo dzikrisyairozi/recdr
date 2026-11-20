@@ -58,6 +58,8 @@ pub struct Edit {
     pub picture: Option<(u64, PathBuf)>,
     pub loading: bool,
     pub exporting: bool,
+    /// A close came during an export; the app quits once the export reports.
+    pub closing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -333,6 +335,7 @@ fn recording(app: &mut App, event: Event, now_ms: u64) -> Vec<Action> {
                 picture: None,
                 loading: false,
                 exporting: false,
+                closing: false,
             });
             preview(app)
         }
@@ -408,9 +411,13 @@ fn editing(app: &mut App, event: Event, elapsed: u64) -> Vec<Action> {
         }
         Event::Exported(path) if edit.exporting => {
             edit.exporting = false;
+            if edit.closing {
+                return vec![Action::Quit];
+            }
             app.message = Some(path.display().to_string());
             return Vec::new();
         }
+        Event::Failed(_) if edit.exporting && edit.closing => return vec![Action::Quit],
         Event::Failed(text) => {
             edit.exporting = false;
             edit.loading = false;
@@ -420,6 +427,11 @@ fn editing(app: &mut App, event: Event, elapsed: u64) -> Vec<Action> {
         Event::NewRecording if !edit.exporting => {
             app.screen = IDLE;
             app.message = None;
+            return Vec::new();
+        }
+        // Quitting now would leave the export's .part file and no result.
+        Event::CloseRequested if edit.exporting => {
+            edit.closing = true;
             return Vec::new();
         }
         Event::CloseRequested => return vec![Action::Quit],
@@ -680,6 +692,20 @@ mod tests {
 
     /// Quit from the Dock ends the event loop at once, so on_exit has to finish what a
     /// close request starts: wait for a starting recording, then stop it.
+    #[test]
+    fn closing_waits_for_an_export() {
+        for outcome in [
+            Event::Exported("s.gif".into()),
+            Event::Failed("disk full".into()),
+        ] {
+            let mut app = editing_app(3000);
+            let save = step(&mut app, Event::Save("s.gif".into()), 30);
+            assert!(matches!(save[..], [Action::Export(_)]), "{save:?}");
+            assert_eq!(step(&mut app, Event::CloseRequested, 40), []);
+            assert_eq!(step(&mut app, outcome, 50), [Action::Quit]);
+        }
+    }
+
     #[test]
     fn winding_down_stops_a_starting_recording() {
         let mut app = self::app();

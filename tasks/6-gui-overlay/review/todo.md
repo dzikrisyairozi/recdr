@@ -18,7 +18,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
 
 ## Phase 2: Suggestions
 
-- [ ] Task 3: Finish an export before the editor closes
+- [x] Task 3: Finish an export before the editor closes
   - Finding: Suggestion — src/gui/state.rs:398
   - Acceptance: closing during an export quits after `Exported` or `Failed`, with no `.part.` file left
   - Verify: unit test in `src/gui/state.rs`
