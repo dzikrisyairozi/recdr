@@ -4,7 +4,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
 
 ## Phase 1: Important
 
-- [ ] Task 1: Relay a stored recorder error from `await_result`
+- [x] Task 1: Relay a stored recorder error from `await_result` (done on feat/3-cdp-capture, where state.error exists: 08aec7b)
   - Finding: Important — src/control.rs:163
   - Acceptance: a detached recording whose MP4 step fails returns `encode_failed` from `stop`, not `recorder_crashed`
   - Verify: new test in `tests/record.rs`; `rtk proxy cargo test`
@@ -29,7 +29,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: a state whose pid belongs to another process reports `crashed`, and `stop` does not wait
   - Verify: unit test with a wrong creation time; `rtk proxy cargo test`
   - Files: src/platform/windows.rs, src/platform/unix.rs, src/model.rs, src/control.rs, src/recorder.rs
-- [ ] Checkpoint: fmt, clippy, tests, desktop tests and CI green
+- [x] Checkpoint: fmt, clippy, tests, desktop tests and CI green (local; CI runs once pushed)
 
 ## Phase 2: Suggestions
 
@@ -73,4 +73,4 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `--every` on a still recording writes one sample per stored frame
   - Verify: unit test counting files in `samples/`
   - Files: src/analyze/select.rs
-- [ ] Checkpoint: all green; spec drift items decided
+- [x] Checkpoint: all green; spec drift items decided
