@@ -163,6 +163,33 @@ impl App {
     }
 }
 
+/// Runs a close request to its end, for when the event loop has already stopped.
+/// `perform` runs a stop and returns its outcome; `next` returns the next event from
+/// the worker threads, or None when the caller's time limit has passed. Returns at
+/// `Quit` or at None.
+pub fn wind_down(
+    app: &mut App,
+    mut next: impl FnMut() -> Option<Event>,
+    mut perform: impl FnMut(Action) -> Option<Event>,
+) {
+    let mut event = Event::CloseRequested;
+    loop {
+        let mut outcome = None;
+        for action in step(app, event, 0) {
+            match action {
+                Action::Quit => return,
+                Action::Stop(_) => outcome = perform(action),
+                // A preview or a status poll means nothing to a closing app.
+                _ => {}
+            }
+        }
+        match outcome.or_else(&mut next) {
+            Some(e) => event = e,
+            None => return,
+        }
+    }
+}
+
 /// Applies one event at time `now_ms` and returns what to do about it.
 pub fn step(app: &mut App, event: Event, now_ms: u64) -> Vec<Action> {
     let elapsed = now_ms.saturating_sub(app.last_ms);
@@ -649,6 +676,30 @@ mod tests {
         step(&mut app, Event::RecordPressed, 0);
         step(&mut app, Event::CloseRequested, 1);
         assert_eq!(step(&mut app, Event::Failed("x".into()), 2), [Action::Quit]);
+    }
+
+    /// Quit from the Dock ends the event loop at once, so on_exit has to finish what a
+    /// close request starts: wait for a starting recording, then stop it.
+    #[test]
+    fn winding_down_stops_a_starting_recording() {
+        let mut app = self::app();
+        step(&mut app, Event::RecordPressed, 0);
+        let mut arriving = vec![Event::Started("r".into())].into_iter();
+        let mut performed = Vec::new();
+        wind_down(
+            &mut app,
+            || arriving.next(),
+            |action| {
+                performed.push(action.clone());
+                matches!(action, Action::Stop(_)).then(|| stopped("r", 1))
+            },
+        );
+        assert_eq!(performed, [Action::Stop("r".into())]);
+
+        // Nothing arrives before the time limit: winding down returns all the same.
+        let mut app = self::app();
+        step(&mut app, Event::RecordPressed, 0);
+        wind_down(&mut app, || None, |_| None);
     }
 
     #[test]

@@ -9,7 +9,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: `--file` inside the recording directory returns `usage` and changes no file there; the MCP tool returns the same error
   - Verify: new test in `tests/export.rs`; `rtk proxy cargo test --test export`
   - Files: src/export.rs, tests/export.rs, spec/6-gui-overlay/spec.md
-- [ ] Task 2: Stop a starting recording on exit
+- [x] Task 2: Stop a starting recording on exit
   - Finding: Important — src/gui/app.rs:151
   - Acceptance: quitting while a recording is starting leaves no recorder process; `on_exit` returns within its time limit
   - Verify: unit test for the exit loop; manual Quit from the Dock on macOS

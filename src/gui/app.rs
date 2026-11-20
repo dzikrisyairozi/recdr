@@ -12,6 +12,10 @@ use super::state::{self, Action, Event, Screen};
 use super::{editor, overlay, worker};
 use crate::error::{Error, Result};
 
+/// How long quitting waits for a starting recording or an export to report back.
+/// A tab recorder may take 40 s to start; the app does not wait that long.
+const EXIT_LIMIT: Duration = Duration::from_secs(10);
+
 /// The editor's size when it opens, in points.
 const EDITOR_POINTS: (f32, f32) = (960.0, 640.0);
 
@@ -148,11 +152,19 @@ impl eframe::App for Gui {
         if self.quitting {
             return;
         }
-        for action in state::step(&mut self.app, Event::CloseRequested, 0) {
-            if matches!(action, Action::Stop(_)) {
-                let _ = worker::perform(&self.app.out, action);
-            }
-        }
+        // A recording still starting reports Started on the receiver; then it is
+        // stopped like any other. Past the limit the app quits without waiting more.
+        let deadline = std::time::Instant::now() + EXIT_LIMIT;
+        let out = self.app.out.clone();
+        let receiver = &self.receiver;
+        state::wind_down(
+            &mut self.app,
+            || {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                receiver.recv_timeout(left).ok()
+            },
+            |action| worker::perform(&out, action),
+        );
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
