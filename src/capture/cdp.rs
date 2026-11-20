@@ -795,8 +795,13 @@ mod tests {
             let body = format!(r#"{{"webSocketDebuggerUrl":"{url}"}}"#);
             thread::spawn(move || {
                 let (mut peer, _) = listener.accept().unwrap();
-                let mut request = [0u8; 1024];
-                let _ = peer.read(&mut request);
+                // Read the whole request: closing a socket with unread bytes resets it on
+                // Windows, and the reply can be lost.
+                let mut request = Vec::new();
+                let mut byte = [0u8; 1];
+                while !request.ends_with(b"\r\n\r\n") && peer.read(&mut byte).unwrap_or(0) == 1 {
+                    request.push(byte[0]);
+                }
                 let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
                 peer.write_all(head.as_bytes()).unwrap();
                 peer.write_all(body.as_bytes()).unwrap();
