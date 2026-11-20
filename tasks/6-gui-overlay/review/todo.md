@@ -28,7 +28,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: the temp name holds the process id; a failed preview does not clear `exporting`
   - Verify: unit test in `state.rs`; `tests/export.rs`
   - Files: src/export.rs, src/gui/state.rs, src/gui/worker.rs
-- [ ] Task 5: Report a panicking worker
+- [x] Task 5: Report a panicking worker
   - Finding: Suggestion — src/gui/app.rs:75
   - Acceptance: a panic in `worker::perform` becomes `Event::Failed`
   - Verify: unit test

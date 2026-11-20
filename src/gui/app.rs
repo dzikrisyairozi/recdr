@@ -77,7 +77,7 @@ impl Gui {
         }
         let (out, sender, ctx) = (self.app.out.clone(), self.sender.clone(), ctx.clone());
         std::thread::spawn(move || {
-            if let Some(event) = worker::perform(&out, action) {
+            if let Some(event) = perform_caught(&out, action) {
                 // The receiver is gone only when the app has closed.
                 let _ = sender.send(event);
                 ctx.request_repaint();
@@ -144,6 +144,20 @@ impl Gui {
     }
 }
 
+/// `worker::perform`, with a panic reported as `Failed`: a thread that dies sends
+/// nothing, and the screen would wait for it forever.
+fn perform_caught(out: &std::path::Path, action: Action) -> Option<Event> {
+    caught(|| worker::perform(out, action))
+}
+
+fn caught(run: impl FnOnce() -> Option<Event>) -> Option<Event> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or_else(|_| {
+        Some(Event::Failed(
+            "recdr hit an internal error; see stderr".into(),
+        ))
+    })
+}
+
 impl eframe::App for Gui {
     /// Every way out ends here, also the ones that send no close request first: Quit
     /// from the Dock or the app menu on macOS ends the event loop straight away. A
@@ -163,7 +177,7 @@ impl eframe::App for Gui {
                 let left = deadline.saturating_duration_since(std::time::Instant::now());
                 receiver.recv_timeout(left).ok()
             },
-            |action| worker::perform(&out, action),
+            |action| perform_caught(&out, action),
         );
     }
 
@@ -213,5 +227,16 @@ impl eframe::App for Gui {
         if moving {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panicking_action_is_a_failure() {
+        assert!(matches!(caught(|| panic!("boom")), Some(Event::Failed(_))));
+        assert_eq!(caught(|| Some(Event::Tick)), Some(Event::Tick));
     }
 }
