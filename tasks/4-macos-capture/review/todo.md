@@ -18,7 +18,7 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
   - Acceptance: CI runs a `--region` recording that asserts 400x300; only the color test is skipped
   - Verify: macOS CI log
   - Files: tests/desktop.rs, .github/workflows/ci.yml, spec/4-macos-capture/spec.md
-- [ ] Task 3: Report a failed display query
+- [x] Task 3: Report a failed display query
   - Finding: Suggestion — src/capture/macos.rs:125
   - Acceptance: a non-zero `CGGetActiveDisplayList` status gives `capture_failed`
   - Verify: clippy for `aarch64-apple-darwin`; macOS desktop tests
