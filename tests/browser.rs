@@ -97,6 +97,11 @@ impl Browser {
     /// twice in a row; it gets 60 s, and a start that hangs is ended and tried once more.
     /// Chrome's stderr is kept next to its directory and printed when a start fails.
     fn start(name: &str, extra: &[&str]) -> Browser {
+        // The first Chrome on a cold runner has stalled past every limit (no frame in
+        // 30 s on macOS, no DevToolsActivePort on Windows), and the test that got it
+        // failed. One throwaway start comes first, so no test runs a cold Chrome.
+        static WARM: std::sync::Once = std::sync::Once::new();
+        WARM.call_once(|| drop(Self::try_start("warm-up", &[])));
         Self::try_start(name, extra).unwrap_or_else(|| {
             eprintln!("Chrome wrote no DevToolsActivePort in 60 s; starting it again");
             Self::try_start(name, extra).expect("Chrome wrote no DevToolsActivePort, twice")
