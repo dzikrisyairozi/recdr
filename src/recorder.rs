@@ -26,6 +26,25 @@ pub fn run(dir: &RecordingDir) -> Result<RecordingResult> {
     finalize(dir, &mut state, manifest, command_exit_code)
 }
 
+/// The command given after `--`. Dropping it ends the command and everything it started,
+/// unless it has exited, so an error that ends the recording ends the command too.
+struct WrappedCommand(Child);
+
+impl Drop for WrappedCommand {
+    fn drop(&mut self) {
+        if matches!(self.0.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        // Child::kill would end cmd.exe and leave the real command running.
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &self.0.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = self.0.wait();
+    }
+}
+
 fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i32>)> {
     let options = state.options.clone();
     let mut source = capture::open(&state.resolved, options.fps, options.cursor)?;
@@ -63,13 +82,13 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     // `cmd /C` because npm and npx are .cmd files that cannot be started directly. The
     // command's stdout goes to our stderr so our stdout carries only the result JSON.
     let mut child = match &options.command {
-        Some(command) => Some(
+        Some(command) => Some(WrappedCommand(
             Command::new("cmd")
                 .arg("/C")
                 .args(command)
                 .stdout(Stdio::from(std::io::stderr()))
                 .spawn()?,
-        ),
+        )),
         None => None,
     };
     let hook = if options.clicks && !matches!(state.resolved.kind, ResolvedKind::Fake(_)) {
@@ -97,7 +116,12 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
             Some(StopReason::WindowClosed)
         } else if dir.stop_requested() {
             Some(StopReason::Stopped)
-        } else if let Some(status) = child.as_mut().map(Child::try_wait).transpose()?.flatten() {
+        } else if let Some(status) = child
+            .as_mut()
+            .map(|c| c.0.try_wait())
+            .transpose()?
+            .flatten()
+        {
             command_exit_code = status.code();
             Some(StopReason::CommandExited)
         } else if options.duration_ms.is_some_and(|d| elapsed_ms >= d) {
@@ -116,17 +140,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
 
     let dropped_frames = source.dropped();
     drop(source);
-    if let Some(mut child) = child
-        && stop_reason != StopReason::CommandExited
-    {
-        // Child::kill would end cmd.exe and leave the real command running.
-        let _ = Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &child.id().to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let _ = child.wait();
-    }
+    drop(child);
     let clicks = hook.map_or_else(Vec::new, |hook| {
         hook.finish(
             state.resolved.origin,

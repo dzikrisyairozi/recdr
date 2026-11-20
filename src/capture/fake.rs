@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::CaptureSource;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::model::{CaptureEvent, FakeKind, Frame};
 
 const WIDTH: u32 = 320;
@@ -50,6 +50,9 @@ impl CaptureSource for FakeSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>> {
         if self.kind == FakeKind::Closing && self.produced >= 10 {
             return Ok(Some(CaptureEvent::Closed));
+        }
+        if self.kind == FakeKind::Failing && self.produced >= 10 {
+            return Err(Error::CaptureFailed("the synthetic source failed".into()));
         }
         let wait = self.next_due.saturating_duration_since(Instant::now());
         if wait > timeout {

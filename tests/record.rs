@@ -259,6 +259,36 @@ fn time_cap_kills_the_whole_command_tree() {
 }
 
 #[test]
+fn capture_error_ends_the_wrapped_command() {
+    let out = out_dir("wrap-failing");
+    std::fs::create_dir_all(&out).unwrap();
+    let marker = out.join("still-running.txt");
+    // The command writes the marker after about 3 s, unless it was ended before then.
+    let (output, _) = record(
+        "failing",
+        "wrap-failing",
+        &[
+            "--monitor",
+            "0",
+            "--",
+            "ping",
+            "-n",
+            "4",
+            "127.0.0.1",
+            ">nul",
+            "&",
+            "echo",
+            "x",
+            ">",
+            marker.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(error_code(&output), (Some(1), "capture_failed".into()));
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    assert!(!marker.exists(), "the wrapped command kept running");
+}
+
+#[test]
 fn duration_and_command_together_is_usage() {
     let (output, _) = record(
         "moving",

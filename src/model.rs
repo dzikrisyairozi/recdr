@@ -40,6 +40,8 @@ pub enum FakeKind {
     Moving,
     Closing,
     Broken,
+    /// Fails with a capture error after ten frames.
+    Failing,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

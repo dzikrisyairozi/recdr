@@ -19,7 +19,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `recdr windows` bounds equal the recorded frame size; a click is stored within 2 px of where it happened
   - Verify: desktop test comparing bounds and frame size; one manual click
   - Files: src/capture/windows.rs, Cargo.toml, tests/desktop.rs
-- [ ] Task 4: End the wrapped command when the capture loop fails
+- [x] Task 4: End the wrapped command when the capture loop fails
   - Finding: Important — src/recorder.rs:85
   - Acceptance: after a capture error in `record -- <cmd>`, the child process is gone
   - Verify: `rtk proxy cargo test --test record`
