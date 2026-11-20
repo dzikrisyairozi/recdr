@@ -68,7 +68,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `git grep -n "expect(" -- src` shows only test code
   - Verify: clippy and tests
   - Files: src/encode/ffmpeg.rs, src/store.rs, src/encode/mod.rs, src/capture/cdp.rs
-- [ ] Task 13: Write each sample once
+- [x] Task 13: Write each sample once
   - Finding: Suggestion — src/analyze/select.rs:38
   - Acceptance: `--every` on a still recording writes one sample per stored frame
   - Verify: unit test counting files in `samples/`

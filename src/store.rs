@@ -361,12 +361,14 @@ mod tests {
 
     #[test]
     fn an_id_that_is_a_path_is_not_found() {
-        let root = std::env::temp_dir().join(format!("recdr-unit-{}-open", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("recdr-unit-{}-id-is-path", std::process::id()));
         let _ = fs::remove_dir_all(&root);
+        // open only looks for the file, so a plain write is enough.
         let inside = RecordingDir::create(&root.join("out"), 0).unwrap();
-        inside.write_state(&state(inside.id())).unwrap();
+        fs::write(inside.path().join(STATE), "{}").unwrap();
         let outside = RecordingDir::create(&root, 0).unwrap();
-        outside.write_state(&state(outside.id())).unwrap();
+        fs::write(outside.path().join(STATE), "{}").unwrap();
         let out = root.join("out");
         assert!(RecordingDir::open(&out, inside.id()).is_ok());
         for id in [
