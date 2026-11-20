@@ -272,6 +272,11 @@ impl Browser {
     }
 
     fn launch(name: &str, args: Vec<String>) -> Browser {
+        // The first Chrome on a cold runner has stalled past every limit (no frame in
+        // 30 s on macOS, no DevToolsActivePort on Windows), and the test that got it
+        // failed. One throwaway start comes first, so no test runs a cold Chrome.
+        static WARM: std::sync::Once = std::sync::Once::new();
+        WARM.call_once(|| drop(Self::try_launch("warm-up", &args)));
         Self::try_launch(name, &args).unwrap_or_else(|| {
             eprintln!("Chrome wrote no DevToolsActivePort in 60 s; starting it again");
             Self::try_launch(name, &args).expect("Chrome wrote no DevToolsActivePort, twice")
