@@ -278,7 +278,7 @@ A "test window" is the Chrome window described under Testing strategy, 800 by 60
 
 1. `recdr monitors` prints at least one monitor, exactly one of them with `primary` true, and each `bounds` size equals that display's size in points times its scale factor.
 2. `recdr windows` lists the test window with its title, `minimized` false, a `pid` that is a running process, and a `process` equal to the application name of the Chrome the test started.
-3. `recdr record --window-id <id> --duration 3s` exits 0 and writes a GIF between 2.5 and 3.5 seconds long with at least 20 stored frames, whose size is the test window's content size in points times the scale factor.
+3. `recdr record --window-id <id> --duration 3s` exits 0, writes a GIF, and reports a `duration_ms` between 2500 and 3500 with at least 20 stored frames, whose size is the test window's content size in points times the scale factor.
 4. `--window <text>` and `--process <the test Chrome's application name>` find the test window; two test windows with matching titles give `ambiguous_target` listing both; no match gives `target_not_found`.
 5. With the test window showing `/green`: `recdr record --region x,y,400,300 --duration 2s`, where the region is centered on the window's `bounds`, stores frames of exactly 400 by 300 pixels, and the center pixel of each is green (its green value is more than twice its red and its blue).
 6. `recdr record --monitor 0 --duration 2s` stores frames whose size equals the monitor's `bounds` size.

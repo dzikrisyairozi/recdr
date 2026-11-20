@@ -270,7 +270,10 @@ mod on_macos {
         let (_browser, window) = test_window("list", "anim");
         assert_eq!(window["title"], title("list"));
         assert_eq!(window["minimized"], false);
-        assert_ne!(window["process"], "");
+        // A macOS application's name is its executable's name.
+        let chrome = common::chrome_path();
+        let name = chrome.file_name().unwrap().to_str().unwrap();
+        assert_eq!(window["process"], name);
         let pid = window["pid"].as_u64().unwrap().to_string();
         let alive = std::process::Command::new("kill")
             .args(["-0", &pid])
@@ -415,18 +418,22 @@ mod on_macos {
     #[test]
     #[ignore]
     fn monitor_recording_has_the_monitor_size() {
-        let monitors = ok(&recdr().arg("monitors").output().unwrap());
-        let bounds = &monitors["monitors"][0]["bounds"];
+        // The size macOS's own screenshot of the main display has, which does not go
+        // through recdr's scale code.
+        let shot =
+            std::env::temp_dir().join(format!("recdr-main-display-{}.png", std::process::id()));
+        let status = std::process::Command::new("screencapture")
+            .args(["-x", "-D", "1"])
+            .arg(&shot)
+            .status()
+            .unwrap();
+        assert!(status.success(), "screencapture failed");
+        let expected = image::image_dimensions(&shot).unwrap();
+        let _ = std::fs::remove_file(&shot);
         let result = ok(&record("monitor", &["--monitor", "0", "--duration", "2s"]));
         assert!(result["frames_stored"].as_u64().unwrap() >= 1);
         for frame in stored_frames(&result) {
-            assert_eq!(
-                (u64::from(frame.width()), u64::from(frame.height())),
-                (
-                    bounds["width"].as_u64().unwrap(),
-                    bounds["height"].as_u64().unwrap()
-                )
-            );
+            assert_eq!(frame.dimensions(), expected);
         }
     }
 

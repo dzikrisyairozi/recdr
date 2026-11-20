@@ -23,7 +23,7 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
   - Acceptance: a non-zero `CGGetActiveDisplayList` status gives `capture_failed`
   - Verify: clippy for `aarch64-apple-darwin`; macOS desktop tests
   - Files: src/capture/macos.rs
-- [ ] Task 4: Make two desktop tests match their criteria
+- [x] Task 4: Make two desktop tests match their criteria
   - Finding: Suggestion — tests/desktop.rs:263, tests/desktop.rs:368, tests/desktop.rs:477
   - Acceptance: `process` equals Chrome's application name; the monitor size comes from an independent source; criterion 3 reads the GIF or the spec names `duration_ms`
   - Verify: macOS desktop tests
