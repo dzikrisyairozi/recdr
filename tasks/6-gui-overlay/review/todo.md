@@ -4,7 +4,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
 
 ## Phase 1: Important
 
-- [ ] Task 1: Refuse an export target inside the recording directory
+- [x] Task 1: Refuse an export target inside the recording directory
   - Finding: Important — src/export.rs:39
   - Acceptance: `--file` inside the recording directory returns `usage` and changes no file there; the MCP tool returns the same error
   - Verify: new test in `tests/export.rs`; `rtk proxy cargo test --test export`

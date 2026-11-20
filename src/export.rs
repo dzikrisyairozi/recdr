@@ -36,6 +36,19 @@ pub fn run(dir: &RecordingDir, options: &ExportOptions) -> Result<ExportResult> 
             )));
         }
     }
+    // The recording's files are recdr's own: replacing recording.gif or a frame would
+    // change the recording that every later call reads. A missing parent is left for
+    // the write to report.
+    let parent = options.file.parent().filter(|p| !p.as_os_str().is_empty());
+    let parent = parent.unwrap_or(std::path::Path::new("."));
+    if let (Ok(parent), Ok(recording)) = (parent.canonicalize(), dir.path().canonicalize())
+        && parent.starts_with(&recording)
+    {
+        return Err(Error::Usage(format!(
+            "--file is inside the recording directory {}; write the export somewhere else",
+            dir.path().display()
+        )));
+    }
     if options.format == Format::Mp4 {
         encode::check_mp4()?;
     }

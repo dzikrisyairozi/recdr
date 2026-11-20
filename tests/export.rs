@@ -247,6 +247,20 @@ fn export_errors() {
     }
 }
 
+/// The recording's own files are recdr's; an export may not write or replace any.
+#[test]
+fn export_into_the_recording_directory_is_usage() {
+    let (out, id) = recording("export-inside");
+    let before = snapshot(&out.join(&id));
+    for name in ["recording.gif", "frames/new.gif", "./recording.gif"] {
+        let file = out.join(&id).join(name);
+        let output = export(&out, &id, &["--file", file.to_str().unwrap()]);
+        assert_eq!(output.status.code(), Some(2), "{name}");
+        assert_eq!(error_code(&output), "usage", "{name}");
+    }
+    assert!(before == snapshot(&out.join(&id)));
+}
+
 #[test]
 fn export_of_a_running_recording_is_not_found() {
     let out = out_dir("export-running");

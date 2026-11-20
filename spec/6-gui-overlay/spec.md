@@ -114,6 +114,7 @@ Errors. Every code here exists in recdr before this module:
 |---|---|
 | The id is unknown, or the recording has not finished | `recording_not_found` |
 | `--file` has an extension other than `.gif` or `.mp4` | `usage` |
+| `--file` is inside the recording directory | `usage`, and no file there changes |
 | `--from` is not before `--until`, or either lies outside the recording | `usage` |
 | `--crop` is not inside the picture, or is smaller than 2 by 2 | `usage` |
 | MP4 asked for where it cannot be written | The code the check before recording gives on that system: `ffmpeg_not_found`, or after `native-mp4` `encode_failed` on Windows and macOS |
