@@ -4,7 +4,7 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
 
 ## Phase 1: Important
 
-- [ ] Task 1: Make the tap's stop impossible to lose
+- [x] Task 1: Make the tap's stop impossible to lose
   - Finding: Important — src/capture/tap.rs:73
   - Acceptance: `Drop for ClickTap` stops the run loop until the thread has finished; `start_then_drop_returns` passes 1,000 times in a row on a Mac
   - Verify: loop the unit test on macOS; macOS desktop tests; macOS CI job
