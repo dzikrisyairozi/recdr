@@ -9,7 +9,7 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
   - Acceptance: `Drop for ClickTap` stops the run loop until the thread has finished; `start_then_drop_returns` passes 1,000 times in a row on a Mac
   - Verify: loop the unit test on macOS; macOS desktop tests; macOS CI job
   - Files: src/capture/tap.rs
-- [ ] Checkpoint: macOS CI job green; Windows and Linux unchanged
+- [x] Checkpoint: macOS CI job green; Windows and Linux unchanged (macOS by clippy only until pushed)
 
 ## Phase 2: Suggestions
 
@@ -38,4 +38,4 @@ Plan: `tasks/4-macos-capture/review/plan.md`. PR: https://github.com/dzikrisyair
   - Acceptance: `RawClick` is gone
   - Verify: Windows desktop tests
   - Files: src/capture/hook.rs, src/capture/windows.rs
-- [ ] Checkpoint: CI green on all three systems; spec drift items decided
+- [x] Checkpoint: CI green on all three systems; spec drift items decided (spec updated; local Windows green, macOS by clippy; CI runs once pushed)

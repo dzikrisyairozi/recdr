@@ -189,7 +189,7 @@ The conversion from points to pixels and the click filter take plain numbers and
 The layer rules are the ones in the `cdp-capture` spec, checked by `tests/layers.rs`. Changes:
 
 - `unsafe` may also appear in `capture/macos.rs` and `capture/tap.rs`.
-- New: `screencapturekit` appears only in `capture/macos.rs`. `objc2_core_graphics` appears only in `capture/macos.rs` (the Screen Recording check) and `capture/tap.rs`. `objc2_core_foundation` appears only in `capture/tap.rs`.
+- New: `screencapturekit` appears only in `capture/macos.rs`. `objc2_core_graphics` appears only in `capture/macos.rs` (the Screen Recording check) and `capture/tap.rs`. `objc2_core_foundation` appears only in `capture/macos.rs` (its CoreGraphics calls take Core Foundation types) and `capture/tap.rs` (the run loop).
 - The rule that system differences are decided only in `capture/mod.rs`, `platform/mod.rs` and `lib.rs` stays as it is.
 
 ## Code style
@@ -208,10 +208,12 @@ As in the first spec. One addition: every `unsafe` block in the two new files ha
 
 The test window on macOS is a Chrome window with a known title and known pixels. The browser tests of `cdp-capture` (`tests/browser.rs`) have what is needed: a small HTTP server on 127.0.0.1 that serves three pages, and a client that sends CDP commands to a test browser. Both move to `tests/common/mod.rs` so the desktop tests can use them. The pages are:
 
+A page whose URL has a fragment takes the fragment as its title, which is how each test names its window.
+
 | Path | Title | What it shows |
 |---|---|---|
-| `/anim` | `anim` | A white page with a red box that moves on every animation frame |
-| `/still` | `still` | A white page with one heading, which never changes |
+| `/anim` | `moving box` | A white page with a red box that moves on every animation frame |
+| `/still` | `quiet page` | A white page with one heading, which never changes |
 | `/green` | `green` | A page filled with the color `#00aa00` |
 
 A desktop test starts Chrome with `--app=http://127.0.0.1:<port>/<page>`, a temporary `--user-data-dir`, `--window-size=800,600` and `--remote-debugging-port=0`. It minimizes the window with the CDP command `Browser.setWindowBounds`, and closes it by ending the Chrome process it started. Neither needs a macOS permission. Chrome's path comes from `RECDR_TEST_CHROME`, as in the browser tests. On Windows the test window stays what it is today.
