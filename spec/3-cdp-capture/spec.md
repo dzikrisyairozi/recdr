@@ -125,6 +125,8 @@ New targets for `record` and `start`. A tab target is one of these two flags, an
 | A `ws://` URL | `ws://127.0.0.1:9222/devtools/browser/4f0c...` | Used as it is |
 | The word `chrome` | `chrome` | Reads `DevToolsActivePort` in the default user data directory of Chrome Stable: `%LOCALAPPDATA%\Google\Chrome\User Data` on Windows, `~/Library/Application Support/Google/Chrome` on macOS, `~/.config/google-chrome` on Linux |
 
+A port number means this machine: when the `webSocketDebuggerUrl` it returns names a host other than `127.0.0.1`, `localhost` or `[::1]`, recdr fails with `cdp_connect_failed` and does not connect. The `http://` and `ws://` forms connect where they are told.
+
 The target rule of the first spec becomes: exactly one of `--window-id`, `--window`, `--process`, `--region`, `--monitor`, `--tab-id`, `--tab`. `--cdp` with a desktop target, a tab target without `--cdp`, and an `https://` or `wss://` endpoint are usage errors.
 
 Every other option of `record` and `start` applies to a tab target unchanged, with one exception: `--no-cursor` is accepted and does nothing, because a screencast never contains the cursor.

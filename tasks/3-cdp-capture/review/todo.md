@@ -28,7 +28,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: a dripping listener fails within 6 s; a recorder that `start` gave up on ends
   - Verify: test with a local `TcpListener`; `rtk proxy cargo test`
   - Files: src/capture/cdp.rs, src/control.rs, tests/record.rs
-- [ ] Task 5: Keep the port form on loopback
+- [x] Task 5: Keep the port form on loopback
   - Finding: Suggestion — src/capture/cdp.rs:508
   - Acceptance: `--cdp <port>` refuses a `webSocketDebuggerUrl` with a remote host
   - Verify: test with a local listener that names a remote host

@@ -555,7 +555,18 @@ fn version_url(authority: &str) -> Result<String> {
 
 fn websocket_url(endpoint: &Endpoint) -> Result<String> {
     match endpoint {
-        Endpoint::Port(port) => version_url(&format!("127.0.0.1:{port}")),
+        Endpoint::Port(port) => {
+            // A bare port means this machine. A reply naming another host would send the
+            // connection, and every frame, off it.
+            let url = version_url(&format!("127.0.0.1:{port}"))?;
+            let host = authority(&url).and_then(|a| a.rsplit_once(':').map(|(h, _)| h.to_owned()));
+            match host.as_deref() {
+                Some("127.0.0.1" | "localhost" | "[::1]") => Ok(url),
+                _ => Err(Error::CdpConnectFailed(format!(
+                    "port {port} named {url}, which is not on this machine"
+                ))),
+            }
+        }
         Endpoint::Http(authority) => version_url(authority),
         Endpoint::Ws(url) => Ok(url.clone()),
         Endpoint::Chrome => {
@@ -770,6 +781,28 @@ mod tests {
         assert_eq!(click(&at("-1", "5"), frame), None);
         assert_eq!(click(&at("5", "625"), frame), None);
         assert_eq!(click(&at("1263", "624"), frame), Some((2526, 1248, "left")));
+    }
+
+    #[test]
+    fn a_port_whose_reply_names_another_host_is_refused() {
+        let reply = |url: &str| {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let body = format!(r#"{{"webSocketDebuggerUrl":"{url}"}}"#);
+            thread::spawn(move || {
+                let (mut peer, _) = listener.accept().unwrap();
+                let mut request = [0u8; 1024];
+                let _ = peer.read(&mut request);
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+                peer.write_all(head.as_bytes()).unwrap();
+                peer.write_all(body.as_bytes()).unwrap();
+            });
+            websocket_url(&Endpoint::Port(port))
+        };
+        let err = reply("ws://192.0.2.1:9222/devtools/browser/x").unwrap_err();
+        assert_eq!(err.code(), "cdp_connect_failed");
+        let local = "ws://127.0.0.1:9222/devtools/browser/x";
+        assert_eq!(reply(local).unwrap(), local);
     }
 
     #[test]
