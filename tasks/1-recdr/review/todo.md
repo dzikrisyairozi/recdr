@@ -38,7 +38,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: inherit off, spawn and inherit on run under one `Mutex`
   - Verify: `rtk proxy cargo test`
   - Files: src/platform/windows.rs
-- [ ] Task 7: Ask the recorder to stop when `start` times out
+- [x] Task 7: Ask the recorder to stop when `start` times out
   - Finding: Suggestion — src/control.rs:72
   - Acceptance: after `recorder_start_failed` on a timeout, the recorder process ends
   - Verify: test with a fake source that delays its first frame

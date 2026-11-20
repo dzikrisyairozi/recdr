@@ -70,6 +70,9 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
             });
         }
         if platform::process_started(pid).is_none() || begun.elapsed() >= START_TIMEOUT {
+            // A recorder whose first frame comes just after the limit would otherwise
+            // record, unseen, until a cap; it reads the stop request on its first pass.
+            let _ = dir.request_stop();
             return Err(Error::RecorderStartFailed(dir.last_log_line()));
         }
         thread::sleep(POLL);
