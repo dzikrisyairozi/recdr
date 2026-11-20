@@ -33,10 +33,13 @@ pub fn frame_refs(
     entries: &[FrameEntry],
     max_width: Option<u32>,
 ) -> Result<Vec<FrameRef>> {
+    // `--every` on a still screen names one stored frame many times; scale it once.
+    let mut scaled = std::collections::HashMap::<u32, std::path::PathBuf>::new();
     entries
         .iter()
         .map(|entry| {
             let path = match max_width {
+                Some(_) if scaled.contains_key(&entry.index) => scaled[&entry.index].clone(),
                 Some(max) => {
                     let image = dir.load_frame(entry)?;
                     if image.width() > max {
@@ -45,6 +48,7 @@ pub fn frame_refs(
                         .max(1) as u32;
                         let path = dir.sample_path(entry, max)?;
                         imageops::resize(&image, max, height, FilterType::Triangle).save(&path)?;
+                        scaled.insert(entry.index, path.clone());
                         path
                     } else {
                         dir.frame_path(entry)

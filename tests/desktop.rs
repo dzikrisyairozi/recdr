@@ -63,6 +63,17 @@ fn monitor_recording_has_the_monitor_size() {
     assert!(result["frames_stored"].as_u64().unwrap() >= 1);
 }
 
+/// Success criterion 17, through the CLI. A whole-monitor PNG passes 1 MB within the
+/// first frames, so the cap ends the recording long before --duration.
+#[test]
+#[ignore]
+fn size_cap_ends_a_recording() {
+    let args = ["--monitor", "0", "--max-size", "1MB", "--duration", "20s"];
+    let result = ok(&record("size-cap", &args));
+    assert_eq!(result["stop_reason"], "size_cap_reached");
+    assert!(result["duration_ms"].as_u64().unwrap() < 20_000);
+}
+
 #[test]
 #[ignore]
 fn region_recording_is_cropped() {
@@ -95,10 +106,9 @@ fn window_recording_is_about_the_window_size() {
     let _ = child.wait();
     let result = ok(&output);
     assert!(result["frames_stored"].as_u64().unwrap() >= 1);
+    // The listed bounds are the visible frame, which is what the capture holds.
     for side in ["width", "height"] {
-        let got = result[side].as_i64().unwrap();
-        let listed = window["bounds"][side].as_i64().unwrap();
-        assert!((got - listed).abs() <= 40, "{side}: {got} vs {listed}");
+        assert_eq!(result[side], window["bounds"][side], "{side}");
     }
 }
 

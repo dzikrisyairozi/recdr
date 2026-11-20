@@ -8,10 +8,11 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use windows::Win32::Foundation::{
-    CloseHandle, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, STILL_ACTIVE, SetHandleInformation,
+    CloseHandle, FILETIME, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, STILL_ACTIVE,
+    SetHandleInformation,
 };
 use windows::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
@@ -29,21 +30,27 @@ pub fn set_dpi_aware() {
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
 }
 
-/// True while the process with this id is running.
-pub fn process_alive(pid: u32) -> bool {
+/// While the process with this id is running, the time it was started, in the
+/// system's 100 ns units. Windows gives a dead process's id to new processes, so a
+/// caller that knows the start time can tell its process from a later one.
+pub fn process_started(pid: u32) -> Option<u64> {
     if pid == 0 {
-        return false;
+        return None;
     }
     // SAFETY: OpenProcess returns an owned handle that is closed below; the exit
-    // code is written into a local.
+    // code and the times are written into locals.
     unsafe {
-        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
-            return false;
-        };
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut code = 0u32;
-        let read = GetExitCodeProcess(process, &mut code).is_ok();
+        let running =
+            GetExitCodeProcess(process, &mut code).is_ok() && code == STILL_ACTIVE.0 as u32;
+        let (mut created, mut exited, mut kernel, mut user) = Default::default();
+        let timed =
+            GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user).is_ok();
         let _ = CloseHandle(process);
-        read && code == STILL_ACTIVE.0 as u32
+        let created: FILETIME = created;
+        (running && timed)
+            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 }
 
@@ -57,6 +64,11 @@ pub fn spawn_detached(exe: &Path, args: &[&OsStr], stderr: File) -> Result<u32> 
         std::io::stdout().as_raw_handle(),
         std::io::stderr().as_raw_handle(),
     ];
+    // The flags belong to the whole process and the MCP server starts recorders from
+    // several threads: without the lock one call can turn them back on while another
+    // is spawning.
+    static SPAWNING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = SPAWNING.lock();
     set_inherit(&handles, false);
     let spawned = Command::new(exe)
         .args(args)

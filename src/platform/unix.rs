@@ -11,8 +11,15 @@ use crate::error::{Error, Result};
 /// Nothing to do: only Windows scales coordinates for processes that do not ask.
 pub fn set_dpi_aware() {}
 
+/// While the process with this id is running, the time it was started (0 where the
+/// system does not say). A dead process's id is given to new processes, so a caller
+/// that knows the start time can tell its process from a later one.
+pub fn process_started(pid: u32) -> Option<u64> {
+    process_alive(pid).then(|| super::start_time(pid).unwrap_or(0))
+}
+
 /// True while the process with this id is running.
-pub fn process_alive(pid: u32) -> bool {
+fn process_alive(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return false;
     };

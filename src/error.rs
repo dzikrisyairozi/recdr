@@ -31,6 +31,8 @@ pub enum Error {
     RecordingNotFound(String),
     #[error("recording {0:?} is not running")]
     RecordingNotActive(String),
+    #[error("recording {0:?} has not finished; stop it or wait for it first")]
+    RecordingNotFinished(String),
     #[error(
         "the recorder for {0:?} exited without a result; its log is in the recording directory"
     )]
@@ -66,6 +68,7 @@ impl Error {
             Error::RecorderStartFailed(_) => "recorder_start_failed",
             Error::RecordingNotFound(_) => "recording_not_found",
             Error::RecordingNotActive(_) => "recording_not_active",
+            Error::RecordingNotFinished(_) => "recording_not_finished",
             Error::RecorderCrashed(_) => "recorder_crashed",
             Error::TooManyFrames(_) => "too_many_frames",
             Error::CaptureFailed(_) => "capture_failed",
@@ -199,6 +202,10 @@ mod tests {
                 Error::RecordingNotActive(String::new()),
                 "recording_not_active",
             ),
+            (
+                Error::RecordingNotFinished(String::new()),
+                "recording_not_finished",
+            ),
             (Error::RecorderCrashed(String::new()), "recorder_crashed"),
             (Error::TooManyFrames(9), "too_many_frames"),
             (Error::CaptureFailed(String::new()), "capture_failed"),
@@ -207,7 +214,7 @@ mod tests {
             (Error::CdpConnectFailed(String::new()), "cdp_connect_failed"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 18);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };
