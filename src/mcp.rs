@@ -77,6 +77,12 @@ struct FramesParams {
     out: Option<PathBuf>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct TabsParams {
+    /// A port, an http:// or ws:// URL, or chrome
+    cdp: String,
+}
+
 struct RecdrServer;
 
 #[tool_router]
@@ -92,7 +98,20 @@ impl RecdrServer {
     }
 
     #[tool(
-        description = "Start recording a window, region or monitor in the background and return its id. Run list_windows first and pass window_id."
+        description = "List the tabs of a browser reached through CDP, with the id to pass as tab_id."
+    )]
+    async fn list_tabs(
+        &self,
+        Parameters(params): Parameters<TabsParams>,
+    ) -> std::result::Result<CallToolResult, ErrorData> {
+        let tabs = run(move || {
+            request::parse_endpoint(&params.cdp).and_then(|endpoint| control::list_tabs(&endpoint))
+        });
+        Ok(reply(tabs.await, |_| Ok(Vec::new())))
+    }
+
+    #[tool(
+        description = "Start recording a window, region, monitor or browser tab in the background and return its id. For a window run list_windows and pass window_id. For a tab run list_tabs and pass cdp and tab_id."
     )]
     async fn start_recording(
         &self,
@@ -114,7 +133,7 @@ impl RecdrServer {
     }
 
     #[tool(
-        description = "Record for a fixed duration such as 5s and return the files and a contact sheet. Run list_windows first and pass window_id."
+        description = "Record for a fixed duration such as 5s and return the files and a contact sheet. For a window run list_windows and pass window_id. For a tab run list_tabs and pass cdp and tab_id."
     )]
     async fn record(
         &self,

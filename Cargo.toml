@@ -24,6 +24,7 @@ font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
 gif = "0.14"
 base64 = "0.23"
 image = { version = "0.25", default-features = false, features = ["png"] }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-capture = "2.0.1"
@@ -35,6 +36,9 @@ windows = { version = "0.62", features = [
     "Win32_UI_HiDpi",
     "Win32_Graphics_Dwm",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # Dependencies (PNG and GIF encoding) are optimised in debug builds too; unoptimised
 # PNG encoding drops most frames of a 1080p recording, so tests and `cargo run`

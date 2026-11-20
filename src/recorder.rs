@@ -1,16 +1,15 @@
 //! One recording, from the first frame to `result.json`.
 
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 use crate::analyze;
 use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
-use crate::input::ClickHook;
 use crate::model::{
-    CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind, State,
-    Status, StopReason,
+    CaptureEvent, Click, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind,
+    State, Status, StopReason,
 };
 use crate::platform;
 use crate::store::RecordingDir;
@@ -18,6 +17,7 @@ use crate::time;
 
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(50);
+const HOLD_POLL: Duration = Duration::from_millis(2);
 
 /// Runs the recording described by the directory's `state.json` until a stop
 /// condition holds, then writes every output.
@@ -36,19 +36,13 @@ impl Drop for WrappedCommand {
         if matches!(self.0.try_wait(), Ok(Some(_))) {
             return;
         }
-        // Child::kill would end cmd.exe and leave the real command running.
-        let _ = Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &self.0.id().to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let _ = self.0.wait();
+        platform::kill_tree(&mut self.0);
     }
 }
 
 fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i32>)> {
     let options = state.options.clone();
-    let mut source = capture::open(&state.resolved, options.fps, options.cursor)?;
+    let mut source = capture::open(&state.resolved, options.fps, options.cursor, options.clicks)?;
 
     let waited = Instant::now();
     let first = loop {
@@ -64,7 +58,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
                     "no frame arrived within 5 seconds".into(),
                 ));
             }
-            None => {}
+            Some(CaptureEvent::Click { .. }) | None => {}
         }
     };
 
@@ -80,42 +74,58 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
 
     let mut writer = dir.frame_writer(first.width, first.height)?;
     writer.push(first, 0)?;
+    // Later frames are stored on the writer's own thread, so this loop keeps reading
+    // its source, timing clicks and checking for the end while a frame is encoded.
+    let mut writer = writer.into_thread()?;
 
-    // `cmd /C` because npm and npx are .cmd files that cannot be started directly. The
-    // command's stdout goes to our stderr so our stdout carries only the result JSON.
     let mut child = match &options.command {
-        Some(command) => Some(WrappedCommand(
-            Command::new("cmd")
-                .arg("/C")
-                .args(command)
-                .stdout(Stdio::from(std::io::stderr()))
-                .spawn()?,
-        )),
+        Some(command) => Some(WrappedCommand(platform::spawn_command(command)?)),
         None => None,
     };
-    let hook = if options.clicks && !matches!(state.resolved.kind, ResolvedKind::Fake(_)) {
-        Some(ClickHook::start()?)
-    } else {
-        None
-    };
     let mut command_exit_code = None;
+    let mut raw_clicks = Vec::new();
 
     let interval_ms = u64::from(1000 / options.fps);
-    let mut last_accepted_ms = 0;
+    // At most one frame per 1/fps slot of the timeline. Counting slots, not the time since
+    // the last stored frame, keeps the rate when frames arrive late: a late frame does not
+    // push every later slot back.
+    let mut last_slot = 0;
     let (stop_reason, duration_ms) = loop {
-        let event = source.next_event(POLL)?;
+        // A paced source sends its next frame only after this one is handed on. While the
+        // writer still has a frame waiting the source keeps its frames, so the browser
+        // waits and no frame is replaced (cdp-capture criterion 4); clicks and the tab's
+        // end still arrive on time, and the loop still reaches the stop checks.
+        // While holding, the source is asked again every few milliseconds, so a frame goes
+        // out as soon as the writer is free and not up to one POLL later.
+        let holding = source.paced() && !writer.is_free();
+        source.hold_frames(holding);
+        let event = source.next_event(if holding { HOLD_POLL } else { POLL })?;
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let mut closed = false;
         match event {
-            Some(CaptureEvent::Frame(frame)) if elapsed_ms - last_accepted_ms >= interval_ms => {
-                writer.push(frame, elapsed_ms)?;
-                last_accepted_ms = elapsed_ms;
+            Some(CaptureEvent::Frame(frame))
+                if source.paced() || elapsed_ms / interval_ms > last_slot =>
+            {
+                // Timed from when the frame arrived, as clicks are.
+                let age_ms = source.frame_age().as_millis() as u64;
+                writer.push(frame, elapsed_ms.saturating_sub(age_ms))?;
+                last_slot = elapsed_ms / interval_ms;
             }
             Some(CaptureEvent::Frame(_)) | None => {}
+            Some(CaptureEvent::Click {
+                unix_ms,
+                x,
+                y,
+                button,
+            }) => raw_clicks.push((unix_ms, x, y, button)),
             Some(CaptureEvent::Closed) => closed = true,
         }
         let reason = if closed {
-            Some(StopReason::WindowClosed)
+            Some(if matches!(state.resolved.kind, ResolvedKind::Tab(_)) {
+                StopReason::TabClosed
+            } else {
+                StopReason::WindowClosed
+            })
         } else if dir.stop_requested() {
             Some(StopReason::Stopped)
         } else if let Some(status) = child
@@ -140,17 +150,11 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         }
     };
 
-    let dropped_frames = source.dropped();
+    let (frames, skipped) = writer.finish()?;
+    let dropped_frames = source.dropped() + skipped;
     drop(source);
     drop(child);
-    let clicks = hook.map_or_else(Vec::new, |hook| {
-        hook.finish(
-            state.resolved.origin,
-            state.width,
-            state.height,
-            state.started_at_unix_ms,
-        )
-    });
+    let clicks = clicks(raw_clicks, state.started_at_unix_ms, duration_ms);
 
     let marks = dir
         .read_marks()?
@@ -168,13 +172,33 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
         fps: options.fps,
         started_at_unix_ms: state.started_at_unix_ms,
         duration_ms,
-        frames: writer.finish(),
+        frames,
         marks,
         clicks,
         stop_reason,
         dropped_frames,
     };
     Ok((manifest, command_exit_code))
+}
+
+/// Presses timed from the first frame, keeping those inside the recording, the rule
+/// marks follow.
+fn clicks(
+    raw: Vec<(u64, i32, i32, &'static str)>,
+    started_at_unix_ms: u64,
+    duration_ms: u64,
+) -> Vec<Click> {
+    raw.into_iter()
+        .filter_map(|(unix_ms, x, y, button)| {
+            let t_ms = unix_ms.checked_sub(started_at_unix_ms)?;
+            (t_ms <= duration_ms).then(|| Click {
+                t_ms,
+                x,
+                y,
+                button: button.to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn finalize(
@@ -242,6 +266,7 @@ pub(crate) fn prepared(options: crate::model::RecordOptions, name: &str) -> Reco
             origin: (0, 0),
         },
         options,
+        error: None,
     })
     .unwrap();
     dir
@@ -265,6 +290,25 @@ mod tests {
             duration_ms: None,
             command: None,
         }
+    }
+
+    #[test]
+    fn clicks_are_timed_from_the_first_frame() {
+        let raw = vec![
+            (900, 1, 1, "left"),
+            (1200, 2, 3, "right"),
+            (1600, 4, 4, "left"),
+        ];
+        let kept = clicks(raw, 1000, 500);
+        assert_eq!(
+            kept,
+            vec![Click {
+                t_ms: 200,
+                x: 2,
+                y: 3,
+                button: "right".into(),
+            }]
+        );
     }
 
     #[test]

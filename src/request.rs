@@ -6,7 +6,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
-use crate::model::{FakeKind, Format, FrameSelection, RecordOptions, Rect, Target};
+use crate::model::{
+    Endpoint, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery, TabTarget, Target,
+};
 use crate::time::parse_time;
 
 pub const DEFAULT_FPS: u32 = 15;
@@ -26,6 +28,12 @@ pub struct RecordRequest {
     pub process: Option<String>,
     pub region: Option<String>,
     pub monitor: Option<usize>,
+    /// A port, an http:// or ws:// URL, or "chrome"; goes with tab_id or tab.
+    pub cdp: Option<String>,
+    /// Tab id from list_tabs.
+    pub tab_id: Option<String>,
+    /// Tab whose title or URL contains this text, ignoring case.
+    pub tab: Option<String>,
     pub fps: Option<u32>,
     pub max_duration: Option<String>,
     pub max_size: Option<String>,
@@ -41,6 +49,7 @@ pub struct RecordRequest {
 
 impl RecordRequest {
     pub fn into_options(self) -> Result<RecordOptions> {
+        let cdp = self.cdp.as_deref().map(parse_endpoint).transpose()?;
         let mut targets = Vec::new();
         if let Some(id) = self.window_id {
             targets.push(Target::WindowId(id));
@@ -57,12 +66,24 @@ impl RecordRequest {
         if let Some(index) = self.monitor {
             targets.push(Target::Monitor(index));
         }
-        if targets.len() != 1 {
+        let mut queries = Vec::new();
+        if let Some(id) = self.tab_id {
+            queries.push(TabQuery::Id(id));
+        }
+        if let Some(text) = self.tab {
+            queries.push(TabQuery::Text(text));
+        }
+        if targets.len() + queries.len() != 1 {
             return Err(usage(
-                "give exactly one of --window-id, --window, --process, --region, --monitor",
+                "give exactly one of --window-id, --window, --process, --region, --monitor, --tab-id, --tab",
             ));
         }
-        let mut target = targets.remove(0);
+        let mut target = match (queries.pop(), cdp) {
+            (Some(query), Some(cdp)) => Target::Tab(TabTarget { cdp, query }),
+            (Some(_), None) => return Err(usage("--tab-id and --tab need --cdp")),
+            (None, Some(_)) => return Err(usage("--cdp goes with --tab-id or --tab")),
+            (None, None) => targets.remove(0),
+        };
         if let Ok(value) = std::env::var(FAKE_SOURCE_ENV) {
             target = Target::Fake(fake_kind(&value)?);
         }
@@ -172,6 +193,50 @@ pub fn parse_formats(text: &str) -> Result<Vec<Format>> {
     Ok(formats)
 }
 
+/// A port, an http:// URL, a ws:// URL, or `chrome`.
+pub fn parse_endpoint(text: &str) -> Result<Endpoint> {
+    if text == "chrome" {
+        return Ok(Endpoint::Chrome);
+    }
+    if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
+        return match text.parse::<u16>() {
+            Ok(port) if port > 0 => Ok(Endpoint::Port(port)),
+            _ => Err(Error::Usage(format!(
+                "{text} is not a port between 1 and 65535"
+            ))),
+        };
+    }
+    if let Some(rest) = text.strip_prefix("http://") {
+        let authority = rest.strip_suffix('/').unwrap_or(rest);
+        if authority.is_empty() || authority.contains('/') {
+            return Err(Error::Usage(format!(
+                "{text} is not an http:// endpoint; use http://host:port"
+            )));
+        }
+        return Ok(Endpoint::Http(if authority.contains(':') {
+            authority.to_owned()
+        } else {
+            format!("{authority}:80")
+        }));
+    }
+    if let Some(rest) = text.strip_prefix("ws://") {
+        if rest.split('/').next().unwrap_or_default().is_empty() {
+            return Err(Error::Usage(format!(
+                "{text} is not a ws:// endpoint; use ws://host:port/path"
+            )));
+        }
+        return Ok(Endpoint::Ws(text.to_owned()));
+    }
+    if text.starts_with("https://") || text.starts_with("wss://") {
+        return Err(usage(
+            "recdr does not connect over TLS; use an http:// or ws:// endpoint",
+        ));
+    }
+    Err(Error::Usage(format!(
+        "{text} is not a CDP endpoint; use a port, an http:// URL, a ws:// URL, or chrome"
+    )))
+}
+
 /// The output root, made absolute so a detached recorder and later commands agree on it.
 pub fn resolve_out(out: Option<PathBuf>) -> Result<PathBuf> {
     let out = out.unwrap_or_else(|| PathBuf::from(DEFAULT_OUT));
@@ -206,6 +271,130 @@ pub fn parse_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn usage_message(text: &str) -> String {
+        let error = parse_endpoint(text).unwrap_err();
+        assert_eq!(error.code(), "usage", "{text}");
+        error.to_string()
+    }
+
+    fn target_of(request: RecordRequest) -> Result<Target> {
+        RecordRequest {
+            duration: Some("1s".into()),
+            ..request
+        }
+        .into_options()
+        .map(|options| options.target)
+    }
+
+    #[test]
+    fn tab_flags_need_cdp_and_only_with_each_other() {
+        let message = |request| target_of(request).unwrap_err().to_string();
+        assert_eq!(
+            message(RecordRequest {
+                tab: Some("x".into()),
+                ..Default::default()
+            }),
+            "--tab-id and --tab need --cdp"
+        );
+        assert_eq!(
+            message(RecordRequest {
+                cdp: Some("9222".into()),
+                monitor: Some(0),
+                ..Default::default()
+            }),
+            "--cdp goes with --tab-id or --tab"
+        );
+        assert_eq!(
+            message(RecordRequest {
+                cdp: Some("1".into()),
+                tab_id: Some("a".into()),
+                tab: Some("b".into()),
+                ..Default::default()
+            }),
+            "give exactly one of --window-id, --window, --process, --region, --monitor, --tab-id, --tab"
+        );
+    }
+
+    #[test]
+    fn tab_flag_with_cdp_is_a_tab_target() {
+        let target = target_of(RecordRequest {
+            cdp: Some("9222".into()),
+            tab_id: Some("AB".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            target.unwrap(),
+            Target::Tab(TabTarget {
+                cdp: Endpoint::Port(9222),
+                query: TabQuery::Id("AB".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_endpoint_chrome() {
+        assert_eq!(parse_endpoint("chrome").unwrap(), Endpoint::Chrome);
+    }
+
+    #[test]
+    fn parse_endpoint_port() {
+        assert_eq!(parse_endpoint("9222").unwrap(), Endpoint::Port(9222));
+        for text in ["0", "65536", "99999999999"] {
+            assert_eq!(
+                usage_message(text),
+                format!("{text} is not a port between 1 and 65535")
+            );
+        }
+    }
+
+    #[test]
+    fn parse_endpoint_http() {
+        let http = |text| parse_endpoint(text).unwrap();
+        assert_eq!(
+            http("http://127.0.0.1:9222"),
+            Endpoint::Http("127.0.0.1:9222".into())
+        );
+        assert_eq!(
+            http("http://host:9222/"),
+            Endpoint::Http("host:9222".into())
+        );
+        assert_eq!(http("http://host"), Endpoint::Http("host:80".into()));
+        for text in ["http://", "http:///", "http://host:1/json"] {
+            assert!(
+                usage_message(text).ends_with("is not an http:// endpoint; use http://host:port"),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_endpoint_ws() {
+        let url = "ws://127.0.0.1:9222/devtools/browser/abc";
+        assert_eq!(parse_endpoint(url).unwrap(), Endpoint::Ws(url.into()));
+        assert_eq!(
+            usage_message("ws:///x"),
+            "ws:///x is not a ws:// endpoint; use ws://host:port/path"
+        );
+    }
+
+    #[test]
+    fn parse_endpoint_refuses_tls() {
+        for text in ["https://example.test", "wss://example.test/x"] {
+            assert_eq!(
+                usage_message(text),
+                "recdr does not connect over TLS; use an http:// or ws:// endpoint"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_endpoint_anything_else() {
+        assert_eq!(
+            usage_message("localhost:9222"),
+            "localhost:9222 is not a CDP endpoint; use a port, an http:// URL, a ws:// URL, or chrome"
+        );
+    }
 
     #[test]
     fn parse_size_units() {
@@ -263,8 +452,8 @@ mod tests {
             (&at[..], None, true),
             (&[][..], Some("0ms"), false),
         ] {
-            let code = parse_selection(at, every, keyframes).unwrap_err().code();
-            assert_eq!(code, "usage");
+            let error = parse_selection(at, every, keyframes).unwrap_err();
+            assert_eq!(error.code(), "usage");
         }
     }
 }

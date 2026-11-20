@@ -23,6 +23,8 @@ enum Command {
     Windows,
     /// List monitors
     Monitors,
+    /// List the tabs of a browser
+    Tabs(TabsCmd),
     /// Record for a fixed time or while a command runs, then print the result
     Record(RecordCmd),
     /// Start recording in the background and print its id
@@ -60,6 +62,15 @@ struct TargetFlags {
     /// Monitor index from `recdr monitors`, starting at 0
     #[arg(long)]
     monitor: Option<usize>,
+    /// Browser to attach to: a port, an http:// or ws:// URL, or chrome
+    #[arg(long)]
+    cdp: Option<String>,
+    /// Tab id from `recdr tabs`
+    #[arg(long)]
+    tab_id: Option<String>,
+    /// Tab whose title or URL contains this text, ignoring case
+    #[arg(long)]
+    tab: Option<String>,
 }
 
 #[derive(Args)]
@@ -105,6 +116,13 @@ struct RecordCmd {
 struct StartCmd {
     #[command(flatten)]
     flags: RecordFlags,
+}
+
+#[derive(Args)]
+struct TabsCmd {
+    /// Browser to attach to: a port, an http:// or ws:// URL, or chrome
+    #[arg(long)]
+    cdp: String,
 }
 
 #[derive(Args)]
@@ -165,6 +183,9 @@ impl RecordFlags {
             process: self.target.process,
             region: self.target.region,
             monitor: self.target.monitor,
+            cdp: self.target.cdp,
+            tab_id: self.target.tab_id,
+            tab: self.target.tab,
             fps: self.fps,
             max_duration: self.max_duration,
             max_size: self.max_size,
@@ -192,6 +213,9 @@ pub fn run(serve_mcp: fn() -> Result<()>) -> i32 {
     let outcome: Result<Option<String>> = match cli.command {
         Command::Windows => text(control::list_windows()),
         Command::Monitors => text(control::list_monitors()),
+        Command::Tabs(cmd) => text(
+            request::parse_endpoint(&cmd.cdp).and_then(|endpoint| control::list_tabs(&endpoint)),
+        ),
         Command::Record(cmd) => {
             let request = RecordRequest {
                 duration: cmd.duration,

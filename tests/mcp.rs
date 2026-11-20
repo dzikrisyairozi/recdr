@@ -2,105 +2,12 @@
 
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Stdio};
-use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
-
-use common::{out_dir, recdr};
+use common::{Server, is_error, out_dir, text};
 use serde_json::{Value, json};
 
-struct Server {
-    child: Child,
-    stdin: ChildStdin,
-    lines: Receiver<String>,
-    next_id: u64,
-}
-
-impl Server {
-    fn start() -> Self {
-        let mut child = recdr()
-            .env("RECDR_FAKE_SOURCE", "moving")
-            .arg("mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        // A reader thread, so a silent server fails the test instead of hanging it.
-        let (sender, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                if sender.send(line.unwrap()).is_err() {
-                    break;
-                }
-            }
-        });
-        let mut server = Self {
-            child,
-            stdin,
-            lines,
-            next_id: 1,
-        };
-        let init = server.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "recdr-test", "version": "0"}
-            }),
-        );
-        assert_eq!(init["serverInfo"]["name"], "recdr", "{init}");
-        server.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-        server
-    }
-
-    fn send(&mut self, message: &Value) {
-        writeln!(self.stdin, "{message}").unwrap();
-        self.stdin.flush().unwrap();
-    }
-
-    fn request(&mut self, method: &str, params: Value) -> Value {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        loop {
-            let line = self
-                .lines
-                .recv_timeout(Duration::from_secs(30))
-                .expect("no reply within 30 s");
-            let message: Value = serde_json::from_str(&line).unwrap();
-            if message["id"] == id {
-                return message["result"].clone();
-            }
-        }
-    }
-
-    fn call(&mut self, tool: &str, arguments: Value) -> Value {
-        self.request("tools/call", json!({"name": tool, "arguments": arguments}))
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-fn text(result: &Value) -> String {
-    result["content"][0]["text"].as_str().unwrap().to_owned()
-}
-
-fn is_error(result: &Value) -> bool {
-    result["isError"] == true
-}
-
 #[test]
-fn lists_the_eight_tools() {
-    let mut server = Server::start();
+fn lists_the_nine_tools() {
+    let mut server = Server::start(Some("moving"));
     let tools = server.request("tools/list", json!({}));
     let mut names: Vec<&str> = tools["tools"]
         .as_array()
@@ -115,6 +22,7 @@ fn lists_the_eight_tools() {
             "get_frames",
             "get_status",
             "list_monitors",
+            "list_tabs",
             "list_windows",
             "mark",
             "record",
@@ -128,7 +36,7 @@ fn lists_the_eight_tools() {
 fn record_then_get_frames() {
     let out = out_dir("mcp");
     let out = out.to_str().unwrap();
-    let mut server = Server::start();
+    let mut server = Server::start(Some("moving"));
 
     let recorded = server.call(
         "record",
@@ -163,8 +71,21 @@ fn record_then_get_frames() {
 #[test]
 fn record_without_duration_is_usage() {
     let out = out_dir("mcp-usage");
-    let mut server = Server::start();
+    let mut server = Server::start(Some("moving"));
     let result = server.call("record", json!({"monitor": 0, "out": out}));
     assert!(is_error(&result), "{result}");
     assert!(text(&result).contains("usage"), "{result}");
+}
+
+#[test]
+fn list_tabs_on_a_closed_port_is_an_error() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut server = Server::start(Some("moving"));
+    let result = server.call("list_tabs", json!({"cdp": port.to_string()}));
+    assert!(is_error(&result), "{result}");
+    assert!(text(&result).contains("cdp_connect_failed"), "{result}");
 }

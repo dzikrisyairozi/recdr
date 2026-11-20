@@ -1,0 +1,47 @@
+﻿> cargo test
+     Running unittests src\lib.rs (target\debug\deps\recdr-9c2daf46e8b6111c.exe)
+test result: ok. 43 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.48s
+     Running unittests src\main.rs (target\debug\deps\recdr-722ebc522d9e12d6.exe)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\cli.rs (target\debug\deps\cli-9d532a7bbe6a9fb4.exe)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+     Running tests\control.rs (target\debug\deps\control-4c4eace80b28670b.exe)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.21s
+     Running tests\desktop.rs (target\debug\deps\desktop-be1dac93c57d8bcd.exe)
+test result: ok. 0 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\frames.rs (target\debug\deps\frames-9d2556acc75a5567.exe)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+     Running tests\layers.rs (target\debug\deps\layers-3764a445f700ceef.exe)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests\mcp.rs (target\debug\deps\mcp-6ceeac60db547df5.exe)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+     Running tests\record.rs (target\debug\deps\record-d355d5ad524c85e5.exe)
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.95s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit code: 0
+
+> cargo test --test desktop -- --ignored --skip criterion_15
+     Running tests\desktop.rs (target\debug\deps\desktop-be1dac93c57d8bcd.exe)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 5.59s
+exit code: 0
+
+> cargo test --test desktop -- --ignored criterion_15
+     Running tests\desktop.rs (target\debug\deps\desktop-be1dac93c57d8bcd.exe)
+test criterion_15_dropped_frames ... FAILED
+failures:
+thread 'criterion_15_dropped_frames' (44452) panicked at tests\desktop.rs:225:5:
+failures:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 141.02s
+error: test failed, to rerun pass `--test desktop`
+exit code: 101
+
+> cargo test --lib hook -- --ignored
+     Running unittests src\lib.rs (target\debug\deps\recdr-9c2daf46e8b6111c.exe)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+exit code: 0
+
+Note: criterion_15_dropped_frames measures the live desktop, which was changing during these runs. Second run alone:
+> cargo test --test desktop -- --ignored --nocapture criterion_15
+frames_stored 71, dropped_frames 0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 70.60s
+exit code: 0

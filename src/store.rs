@@ -3,6 +3,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::thread::{self, JoinHandle};
 
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder, RgbaImage, imageops};
@@ -269,7 +272,135 @@ impl RecordingDir {
     }
 }
 
-/// Writes changed frames as numbered PNG files.
+/// Stores frames on its own thread, so the recorder keeps reading its source while a
+/// frame is encoded. A frame that arrives while another is still waiting replaces it,
+/// and the replaced one counts as skipped: a slow disk or CPU lowers the frame rate.
+pub struct WriterThread {
+    shared: Arc<Shared>,
+    thread: Option<JoinHandle<Result<FrameWriter>>>,
+}
+
+struct Shared {
+    mailbox: Mutex<Mailbox>,
+    ready: Condvar,
+    bytes: AtomicU64,
+}
+
+#[derive(Default)]
+struct Mailbox {
+    waiting: Option<(Frame, u64)>,
+    done: bool,
+    skipped: u64,
+}
+
+impl WriterThread {
+    /// Hands the frame to the writer thread and returns at once.
+    pub fn push(&mut self, frame: Frame, t_ms: u64) -> Result<()> {
+        // The thread ends early only on an error; report it here.
+        if self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
+            return self.join().map(|_| ());
+        }
+        let mut mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if mailbox.waiting.replace((frame, t_ms)).is_some() {
+            mailbox.skipped += 1;
+        }
+        self.shared.ready.notify_one();
+        Ok(())
+    }
+
+    /// True when the next `push` replaces nothing. For a source that waits for recdr
+    /// anyway: a browser sends the next frame only after recdr acknowledges, so taking
+    /// no frame from it until this is true lowers the frame rate instead of dropping one.
+    pub fn is_free(&self) -> bool {
+        let mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // A writer that ended on an error never takes the frame; `push` reports it.
+        mailbox.waiting.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished)
+    }
+
+    /// Bytes of the PNG files stored so far.
+    pub fn bytes(&self) -> u64 {
+        self.shared.bytes.load(Ordering::Relaxed)
+    }
+
+    /// Stores the waiting frame, ends the thread, and returns the stored frames and
+    /// the number skipped.
+    pub fn finish(mut self) -> Result<(Vec<FrameEntry>, u64)> {
+        self.close();
+        let frames = self.join()?;
+        let skipped = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .skipped;
+        Ok((frames.frames, skipped))
+    }
+
+    fn close(&self) {
+        self.shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .done = true;
+        self.shared.ready.notify_one();
+    }
+
+    fn join(&mut self) -> Result<FrameWriter> {
+        let thread = self
+            .thread
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::other("the frame writer has ended")))?;
+        thread
+            .join()
+            .map_err(|_| Error::Io(std::io::Error::other("the frame writer panicked")))?
+    }
+}
+
+impl Drop for WriterThread {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter> {
+    loop {
+        let next = {
+            let mut mailbox = shared
+                .mailbox
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            loop {
+                // The waiting frame is taken before `done` is looked at, so `finish`
+                // stores the last frame.
+                if let Some(next) = mailbox.waiting.take() {
+                    break Some(next);
+                }
+                if mailbox.done {
+                    break None;
+                }
+                mailbox = shared
+                    .ready
+                    .wait(mailbox)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        };
+        let Some((frame, t_ms)) = next else {
+            return Ok(frames);
+        };
+        frames.push(frame, t_ms)?;
+        shared.bytes.store(frames.bytes, Ordering::Relaxed);
+    }
+}
+
+/// Writes changed frames as numbered PNG files, on the caller's thread.
 pub struct FrameWriter {
     dir: PathBuf,
     width: u32,
@@ -312,6 +443,23 @@ impl FrameWriter {
 
     pub fn finish(self) -> Vec<FrameEntry> {
         self.frames
+    }
+
+    /// Moves the writer to its own thread for the frames still to come.
+    pub fn into_thread(self) -> Result<WriterThread> {
+        let shared = Arc::new(Shared {
+            mailbox: Mutex::new(Mailbox::default()),
+            ready: Condvar::new(),
+            bytes: AtomicU64::new(self.bytes),
+        });
+        let thread_shared = Arc::clone(&shared);
+        let thread = thread::Builder::new()
+            .name("frame-writer".into())
+            .spawn(move || store_frames(self, &thread_shared))?;
+        Ok(WriterThread {
+            shared,
+            thread: Some(thread),
+        })
     }
 }
 
@@ -425,6 +573,7 @@ mod tests {
                 duration_ms: None,
                 command: None,
             },
+            error: None,
         }
     }
 
@@ -507,6 +656,45 @@ mod tests {
         let frames = writer.finish();
         let image = dir.load_frame(&frames[0]).unwrap();
         assert_eq!(image.dimensions(), (4, 4));
+    }
+
+    #[test]
+    fn writer_thread_keeps_the_last_frame_and_counts_the_skipped() {
+        let out = temp("writer-thread");
+        let dir = RecordingDir::create(&out, 0).unwrap();
+        let mut first = dir.frame_writer(64, 64).unwrap();
+        first.push(solid(64, 64, [0, 0, 0, 255]), 0).unwrap();
+        let mut writer = first.into_thread().unwrap();
+        for i in 1..=20u8 {
+            writer
+                .push(solid(64, 64, [i, 0, 0, 255]), u64::from(i))
+                .unwrap();
+        }
+        let (frames, skipped) = writer.finish().unwrap();
+        assert_eq!(frames.first().unwrap().t_ms, 0);
+        assert_eq!(frames.last().unwrap().t_ms, 20);
+        // Every pushed frame differs from the one before, so each is stored or skipped.
+        assert_eq!(frames.len() as u64 - 1 + skipped, 20);
+    }
+
+    #[test]
+    fn writer_thread_waits_instead_of_skipping_when_asked() {
+        let out = temp("writer-thread-wait");
+        let dir = RecordingDir::create(&out, 0).unwrap();
+        let mut first = dir.frame_writer(256, 256).unwrap();
+        first.push(solid(256, 256, [0, 0, 0, 255]), 0).unwrap();
+        let mut writer = first.into_thread().unwrap();
+        for i in 1..=20u8 {
+            while !writer.is_free() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            writer
+                .push(solid(256, 256, [i, 0, 0, 255]), u64::from(i))
+                .unwrap();
+        }
+        let (frames, skipped) = writer.finish().unwrap();
+        assert_eq!(skipped, 0);
+        assert_eq!(frames.len(), 21);
     }
 
     #[test]

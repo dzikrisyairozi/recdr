@@ -54,12 +54,39 @@ fn recorder_pid(out: &Path, id: &str) -> u32 {
     state["pid"].as_u64().unwrap() as u32
 }
 
+#[cfg(windows)]
 fn pid_listed(pid: u32) -> bool {
     let output = std::process::Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])
         .output()
         .unwrap();
     String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+}
+
+#[cfg(unix)]
+fn pid_listed(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .unwrap()
+        .status
+        .success()
+}
+
+#[cfg(windows)]
+fn kill(pid: u32) -> Output {
+    std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+fn kill(pid: u32) -> Output {
+    std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .output()
+        .unwrap()
 }
 
 #[test]
@@ -93,19 +120,55 @@ fn start_returns_quickly_and_stop_ends_the_recorder() {
     assert_eq!(ok(&run("moving", &out, &["stop", id])), result);
 }
 
+/// The id of the only recording directory under `out`.
+fn only_recording(out: &Path) -> String {
+    let ids: Vec<String> = std::fs::read_dir(out)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    ids[0].clone()
+}
+
 #[test]
-fn broken_source_fails_to_start_with_its_reason() {
+fn broken_source_fails_to_start_with_its_own_code() {
     let out = out_dir("start-broken");
-    let (code, error) = error(&run("broken", &out, &["start", "--monitor", "0"]));
+    let started = run("broken", &out, &["start", "--monitor", "0"]);
+    let (code, error) = error(&started);
     assert_eq!(
         (code, error["code"].as_str()),
-        (Some(1), Some("recorder_start_failed"))
+        (Some(1), Some("capture_failed"))
     );
     let message = error["message"].as_str().unwrap();
     assert!(
         message.contains("the synthetic source is broken"),
         "{message}"
     );
+
+    let recorded = run(
+        "broken",
+        &out_dir("record-broken-compare"),
+        &["record", "--monitor", "0", "--duration", "1s"],
+    );
+    assert_eq!(json(&started.stderr), json(&recorded.stderr));
+
+    let begun = Instant::now();
+    assert_eq!(status_of(&out, &only_recording(&out)), "crashed");
+    assert!(begun.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn failed_record_is_crashed_at_once() {
+    let out = out_dir("record-broken");
+    let (code, _) = error(&run(
+        "broken",
+        &out,
+        &["record", "--monitor", "0", "--duration", "1s"],
+    ));
+    assert_eq!(code, Some(1));
+    assert_eq!(status_of(&out, &only_recording(&out)), "crashed");
 }
 
 #[test]
@@ -125,10 +188,7 @@ fn killed_recorder_is_crashed() {
     let out = out_dir("start-crash");
     let id = start("moving", &out, &[]);
     let pid = recorder_pid(&out, &id);
-    let killed = std::process::Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .output()
-        .unwrap();
+    let killed = kill(pid);
     assert!(killed.status.success(), "{killed:?}");
     let (code, error) = error(&run("moving", &out, &["stop", &id]));
     assert_eq!(
@@ -218,4 +278,14 @@ fn frames_of_a_running_recording_is_not_finished() {
     let _ = run("moving", &out, &["stop", &id]);
     assert_eq!(code, Some(1));
     assert_eq!(err["code"], "recording_not_finished");
+}
+
+#[test]
+fn a_recorder_error_reaches_stop() {
+    let out = out_dir("start-failing");
+    let id = start("failing", &out, &[]);
+    sleep(Duration::from_secs(2));
+    let (code, err) = error(&run("failing", &out, &["stop", &id]));
+    assert_eq!(code, Some(1));
+    assert_eq!(err["code"], "capture_failed", "{err}");
 }

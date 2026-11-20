@@ -1,13 +1,20 @@
 //! Listing windows and monitors, resolving a target, producing frames.
 
+mod cdp;
 mod fake;
+#[cfg(windows)]
+mod hook;
+#[cfg(windows)]
 mod windows;
 
 use std::time::Duration;
 
+use serde::Serialize;
+
 use crate::error::{Error, Result};
 use crate::model::{
-    CaptureEvent, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, Target, WindowInfo,
+    CaptureEvent, Endpoint, FakeKind, MonitorInfo, Rect, ResolvedKind, ResolvedTarget, TabInfo,
+    Target, WindowInfo,
 };
 
 pub trait CaptureSource {
@@ -15,24 +22,85 @@ pub trait CaptureSource {
     fn next_event(&mut self, timeout: Duration) -> Result<Option<CaptureEvent>>;
     /// Frames the source discarded because the consumer was behind.
     fn dropped(&self) -> u64;
-}
-
-pub fn open(resolved: &ResolvedTarget, fps: u32, cursor: bool) -> Result<Box<dyn CaptureSource>> {
-    match resolved.kind {
-        ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
-            "the synthetic source is broken".into(),
-        )),
-        ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(kind))),
-        _ => Ok(Box::new(windows::WgcSource::open(resolved, fps, cursor)?)),
+    /// True when the source hands out frames no faster than the requested rate, so the
+    /// recorder stores every frame it gets.
+    fn paced(&self) -> bool {
+        false
+    }
+    /// While true, a paced source keeps its frames and still reports clicks and its end.
+    /// It hands out no frame, so it acknowledges none, and the browser waits.
+    fn hold_frames(&mut self, _hold: bool) {}
+    /// How long before it was handed out the last frame arrived. The recorder takes this
+    /// off the frame's time, so frames and clicks are timed from the same moment.
+    fn frame_age(&self) -> Duration {
+        Duration::ZERO
     }
 }
 
+/// `clicks` asks the source to report presses; the synthetic source ignores it.
+pub fn open(
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    match &resolved.kind {
+        ResolvedKind::Fake(FakeKind::Broken) => Err(Error::CaptureFailed(
+            "the synthetic source is broken".into(),
+        )),
+        ResolvedKind::Fake(kind) => Ok(Box::new(fake::FakeSource::new(*kind))),
+        ResolvedKind::Tab(tab) => Ok(Box::new(cdp::CdpSource::open(tab, fps, clicks)?)),
+        ResolvedKind::Window(_) | ResolvedKind::Monitor { .. } => {
+            desktop_source(resolved, fps, cursor, clicks)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn desktop_source(
+    resolved: &ResolvedTarget,
+    fps: u32,
+    cursor: bool,
+    clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Ok(Box::new(windows::WgcSource::open(
+        resolved, fps, cursor, clicks,
+    )?))
+}
+
+#[cfg(not(windows))]
+fn desktop_source(
+    _resolved: &ResolvedTarget,
+    _fps: u32,
+    _cursor: bool,
+    _clicks: bool,
+) -> Result<Box<dyn CaptureSource>> {
+    Err(Error::UnsupportedPlatform)
+}
+
+/// The tabs of the browser at `endpoint`.
+pub fn list_tabs(endpoint: &Endpoint) -> Result<Vec<TabInfo>> {
+    cdp::list_tabs(endpoint)
+}
+
+#[cfg(windows)]
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     windows::list_windows()
 }
 
+#[cfg(not(windows))]
+pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    Err(Error::UnsupportedPlatform)
+}
+
+#[cfg(windows)]
 pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
     windows::list_monitors()
+}
+
+#[cfg(not(windows))]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>> {
+    Err(Error::UnsupportedPlatform)
 }
 
 /// Binds a target to one window or monitor from the given lists.
@@ -54,14 +122,14 @@ pub fn resolve(
             let found = windows
                 .iter()
                 .filter(|w| w.title.to_lowercase().contains(&needle));
-            single(found, text, format!("window {text:?}"))
+            window_target(single(found, text, "window", format!("window {text:?}"))?)
         }
         Target::Process(name) => {
             let needle = name.to_lowercase();
             let found = windows
                 .iter()
                 .filter(|w| w.process.to_lowercase() == needle);
-            single(found, name, format!("process {name:?}"))
+            window_target(single(found, name, "window", format!("process {name:?}"))?)
         }
         Target::Region(region) => {
             let monitor = monitors
@@ -93,6 +161,10 @@ pub fn resolve(
                 origin: (monitor.bounds.x, monitor.bounds.y),
             })
         }
+        Target::Tab(tab) => Ok(ResolvedTarget {
+            kind: ResolvedKind::Tab(tab.clone()),
+            origin: (0, 0),
+        }),
         Target::Fake(kind) => Ok(ResolvedTarget {
             kind: ResolvedKind::Fake(*kind),
             origin: (0, 0),
@@ -100,21 +172,27 @@ pub fn resolve(
     }
 }
 
-fn single<'a>(
-    mut found: impl Iterator<Item = &'a WindowInfo>,
+/// The one item of `found`, or `target_not_found` for none and `ambiguous_target` for several.
+fn single<'a, T: Serialize>(
+    mut found: impl Iterator<Item = &'a T>,
     query: &str,
+    kind: &'static str,
     described: String,
-) -> Result<ResolvedTarget> {
+) -> Result<&'a T> {
     let first = found.next().ok_or(Error::TargetNotFound(described))?;
-    let rest: Vec<&WindowInfo> = found.collect();
+    let rest: Vec<&T> = found.collect();
     if !rest.is_empty() {
-        let candidates = std::iter::once(first).chain(rest).cloned().collect();
+        let candidates = std::iter::once(first)
+            .chain(rest)
+            .map(|item| serde_json::json!(item))
+            .collect();
         return Err(Error::AmbiguousTarget {
             query: query.to_owned(),
+            kind,
             candidates,
         });
     }
-    window_target(first)
+    Ok(first)
 }
 
 fn window_target(window: &WindowInfo) -> Result<ResolvedTarget> {
@@ -188,6 +266,16 @@ mod tests {
     }
 
     #[test]
+    fn tab_target_travels_unresolved() {
+        let tab = crate::model::TabTarget {
+            cdp: Endpoint::Port(9222),
+            query: crate::model::TabQuery::Text("docs".into()),
+        };
+        let resolved = resolve_with(Target::Tab(tab.clone())).unwrap();
+        assert_eq!(resolved.kind, ResolvedKind::Tab(tab));
+    }
+
+    #[test]
     fn window_id_hit_and_miss() {
         let hit = resolve_with(Target::WindowId(2)).unwrap();
         assert_eq!(hit.kind, ResolvedKind::Window(2));
@@ -205,12 +293,56 @@ mod tests {
     #[test]
     fn title_matching_two_windows_is_ambiguous_and_lists_both() {
         match resolve_with(Target::WindowTitle("chrome".into())) {
-            Err(Error::AmbiguousTarget { candidates, .. }) => {
-                let ids: Vec<u64> = candidates.iter().map(|w| w.id).collect();
-                assert_eq!(ids, [1, 2]);
+            Err(error @ Error::AmbiguousTarget { .. }) => {
+                assert_eq!(
+                    error.to_string(),
+                    "2 windows match \"chrome\"; pass --window-id"
+                );
+                let Error::AmbiguousTarget { candidates, .. } = error else {
+                    unreachable!()
+                };
+                let ids: Vec<Option<u64>> = candidates.iter().map(|c| c["id"].as_u64()).collect();
+                assert_eq!(ids, [Some(1), Some(2)]);
             }
             other => panic!("expected AmbiguousTarget, got {other:?}"),
         }
+    }
+
+    fn tab(id: &str, title: &str) -> TabInfo {
+        TabInfo {
+            id: id.into(),
+            title: title.into(),
+            url: format!("http://example.test/{id}"),
+        }
+    }
+
+    #[test]
+    fn single_serves_tabs_too() {
+        let tabs = [tab("A1", "Docs"), tab("B2", "Docs too")];
+        let pick = |query: &str| {
+            let needle = query.to_lowercase();
+            let found = tabs
+                .iter()
+                .filter(|t| t.title.to_lowercase().contains(&needle));
+            single(found, query, "tab", format!("tab {query:?}"))
+        };
+
+        let error = pick("docs").unwrap_err();
+        assert_eq!(error.code(), "ambiguous_target");
+        assert_eq!(error.to_string(), "2 tabs match \"docs\"; pass --tab-id");
+        let candidates = error.info().candidates.unwrap();
+        assert_eq!(candidates.len(), 2);
+        for candidate in &candidates {
+            let mut keys: Vec<&String> = candidate.as_object().unwrap().keys().collect();
+            keys.sort();
+            assert_eq!(keys, ["id", "title", "url"]);
+        }
+
+        assert_eq!(pick("too").unwrap().id, "B2");
+
+        let missing = pick("mail").unwrap_err();
+        assert_eq!(missing.code(), "target_not_found");
+        assert_eq!(missing.to_string(), "no target matches tab \"mail\"");
     }
 
     #[test]

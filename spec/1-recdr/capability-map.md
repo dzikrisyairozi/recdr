@@ -7,10 +7,10 @@ Tracking issue: https://github.com/dzikrisyairozi/recdr/issues/1
 | Module id | Responsibility | Depends on |
 |---|---|---|
 | `agent-recorder` | Windows headless recorder: window, region and monitor capture; PNG frame store; GIF and ffmpeg encoding; start/stop, fixed-duration and wrap-a-command control; agent view (keyframes, contact sheet, sampled frames, diff report); CLI and MCP server | none |
-| `cdp-capture` | Record a browser tab through the Chrome DevTools Protocol screencast, attaching to a browser that is already running | `agent-recorder` |
-| `macos-capture` | ScreenCaptureKit backend for window, region and monitor capture on macOS | `agent-recorder` |
-| `native-mp4` | H.264 MP4 without ffmpeg: Media Foundation on Windows, VideoToolbox on macOS | `agent-recorder`, `macos-capture` |
-| `gui-overlay` | egui desktop app: transparent always-on-top frame placed over the target, toolbar, and a trim and crop screen shown after recording | `agent-recorder` |
+| `cdp-capture` | Record a browser tab through the Chrome DevTools Protocol screencast, attaching to a browser that is already running. Makes recdr build and run on Linux and macOS for tab recording only | `agent-recorder` |
+| `macos-capture` | ScreenCaptureKit backend for window, region and monitor capture on macOS | `agent-recorder`, `cdp-capture` |
+| `native-mp4` | H.264 MP4 without ffmpeg: Media Foundation on Windows, VideoToolbox on macOS | `agent-recorder`, `cdp-capture` |
+| `gui-overlay` | egui desktop app: transparent always-on-top frame placed over the target, toolbar, and a trim and crop screen shown after recording. Adds `recdr export`, so trim and crop also work without the app | `agent-recorder`; on macOS also `macos-capture` |
 
 Build order: `agent-recorder` → `cdp-capture` → `macos-capture` → `native-mp4` → `gui-overlay`
 
@@ -23,8 +23,14 @@ Build order: `agent-recorder` → `cdp-capture` → `macos-capture` → `native-
 - Language: Rust. License: MIT, so no GPL or AGPL dependencies (this rules out the `gifski` GIF encoder, which is AGPL-3.0-or-later).
 - GUI toolkit: egui. Tauri was rejected because it draws the UI in a WebView and the owner wants no web layer.
 - "Headless" means recdr shows no window of its own. A desktop session with visible windows still exists. Recording on a machine with no display is only in scope for `cdp-capture`.
-- Each module gets its own spec in this directory, named `spec-<module-id>.md`, written when its turn comes.
+- Each module gets its own spec, written when its turn comes. `agent-recorder` is tracked by issue #1 and its spec is in this directory. Every later module gets its own sub-issue of #1, and its spec is `spec/<issue-number>-<module-id>/spec.md`. This list is the index.
 
 ## Specs
 
-- [spec-agent-recorder.md](spec-agent-recorder.md)
+- `agent-recorder`: [spec-agent-recorder.md](spec-agent-recorder.md), issue #1
+- `cdp-capture`: [../3-cdp-capture/spec.md](../3-cdp-capture/spec.md), issue #3
+- `macos-capture`: [../4-macos-capture/spec.md](../4-macos-capture/spec.md), issue #4
+- `native-mp4`: [../5-native-mp4/spec.md](../5-native-mp4/spec.md), issue #5
+- `gui-overlay`: [../6-gui-overlay/spec.md](../6-gui-overlay/spec.md), issue #6
+
+The last three specs were written on 2026-11-18, ahead of their turn. Each module's plan is written when the module before it is built.

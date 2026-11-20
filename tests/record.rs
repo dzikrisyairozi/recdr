@@ -38,27 +38,49 @@ fn error_code(output: &Output) -> (Option<i32>, String) {
 
 #[test]
 fn moving_for_one_second() {
-    let (output, out) = record(
-        "moving",
-        "moving-1s",
-        &["--monitor", "0", "--duration", "1s"],
-    );
-    let result = ok(&output);
+    // On a loaded macOS runner the synthetic source's 33 ms sleep has woken only every
+    // 160 ms, so one run in a few stored 9 frames. A slow limiter fails both runs; a
+    // starved runner almost never does, so the recording gets a second try.
+    let mut attempt = 0;
+    let (result, out, manifest) = loop {
+        attempt += 1;
+        let (output, out) = record(
+            "moving",
+            &format!("moving-1s-{attempt}"),
+            &["--monitor", "0", "--duration", "1s"],
+        );
+        let result = ok(&output);
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
+                .unwrap();
+        // The limiter's output is what was stored plus what the writer replaced while
+        // it was busy (`dropped_frames`; the synthetic source drops none).
+        let stored = result["frames_stored"].as_u64().unwrap();
+        let passed = stored + result["dropped_frames"].as_u64().unwrap();
+        let times: Vec<u64> = manifest["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["t_ms"].as_u64().unwrap())
+            .collect();
+        let message = format!(
+            "{stored} stored and {passed} through the limiter: not at 15 fps; stored at {times:?} ms"
+        );
+        assert!(passed <= 17, "{message}");
+        if passed >= 10 {
+            break (result, out, manifest);
+        }
+        assert!(attempt < 2, "twice: {message}");
+        eprintln!("::warning::attempt {attempt}: {message}");
+    };
     assert_eq!(result["stop_reason"], "duration_reached");
     assert_eq!(result["width"], 320);
     assert_eq!(result["height"], 240);
     let duration = result["duration_ms"].as_u64().unwrap();
     assert!((1000..=1500).contains(&duration), "{duration}");
     let stored = result["frames_stored"].as_u64().unwrap();
-    assert!(
-        (10..=17).contains(&stored),
-        "{stored} frames: limiter not at 15 fps"
-    );
-
-    let manifest: Value =
-        serde_json::from_slice(&std::fs::read(result["manifest"].as_str().unwrap()).unwrap())
-            .unwrap();
     let frames = manifest["frames"].as_array().unwrap();
+
     assert_eq!(frames.len() as u64, stored);
     assert_eq!(frames[0]["t_ms"], 0);
     let dir = std::path::Path::new(result["dir"].as_str().unwrap());
@@ -192,19 +214,29 @@ fn static_screen_has_one_keyframe() {
     assert_eq!(ok(&output)["keyframes"].as_array().unwrap().len(), 1);
 }
 
+/// Prints "hi", then waits about two seconds.
+#[cfg(windows)]
+const ECHO_THEN_WAIT: &[&str] = &["cmd", "/c", "echo hi & ping -n 3 127.0.0.1 >nul"];
+#[cfg(unix)]
+const ECHO_THEN_WAIT: &[&str] = &["sh", "-c", "echo hi; sleep 2"];
+
+#[cfg(windows)]
+const EXIT_3: &[&str] = &["cmd", "/c", "exit 3"];
+#[cfg(unix)]
+const EXIT_3: &[&str] = &["sh", "-c", "exit 3"];
+
+/// Runs for about 30 seconds through a child process, so only a tree kill ends it.
+#[cfg(windows)]
+const LONG: &[&str] = &["ping", "-n", "30", "127.0.0.1"];
+#[cfg(unix)]
+const LONG: &[&str] = &["sh", "-c", "sleep 30 & wait"];
+
 #[test]
 fn wrapped_command_sets_the_length_and_keeps_stdout_clean() {
     let (output, _) = record(
         "moving",
         "wrap",
-        &[
-            "--monitor",
-            "0",
-            "--",
-            "cmd",
-            "/c",
-            "echo hi & ping -n 3 127.0.0.1 >nul",
-        ],
+        &[&["--monitor", "0", "--"][..], ECHO_THEN_WAIT].concat(),
     );
     let result = ok(&output);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -220,7 +252,7 @@ fn wrapped_command_exit_code_is_reported_not_returned() {
     let (output, _) = record(
         "moving",
         "wrap-exit",
-        &["--monitor", "0", "--", "cmd", "/c", "exit 3"],
+        &[&["--monitor", "0", "--"][..], EXIT_3].concat(),
     );
     assert_eq!(ok(&output)["command_exit_code"], 3);
 }
@@ -231,17 +263,7 @@ fn time_cap_kills_the_whole_command_tree() {
     let (output, _) = record(
         "moving",
         "wrap-cap",
-        &[
-            "--monitor",
-            "0",
-            "--max-duration",
-            "1s",
-            "--",
-            "ping",
-            "-n",
-            "30",
-            "127.0.0.1",
-        ],
+        &[&["--monitor", "0", "--max-duration", "1s", "--"][..], LONG].concat(),
     );
     assert!(
         begun.elapsed() < std::time::Duration::from_secs(5),
@@ -267,24 +289,28 @@ fn capture_error_ends_the_wrapped_command() {
     // 3 s was too short under the full parallel suite, where the recorder can take that
     // long to start and fail.
     let begun = std::time::Instant::now();
+    let marker_path = marker.to_str().unwrap();
+    #[cfg(windows)]
+    let command = [
+        "ping",
+        "-n",
+        "9",
+        "127.0.0.1",
+        ">nul",
+        "&",
+        "echo",
+        "x",
+        ">",
+        marker_path,
+    ];
+    #[cfg(unix)]
+    let script = format!("sleep 8; echo x > '{marker_path}'");
+    #[cfg(unix)]
+    let command = ["sh", "-c", &script];
     let (output, _) = record(
         "failing",
         "wrap-failing",
-        &[
-            "--monitor",
-            "0",
-            "--",
-            "ping",
-            "-n",
-            "9",
-            "127.0.0.1",
-            ">nul",
-            "&",
-            "echo",
-            "x",
-            ">",
-            marker.to_str().unwrap(),
-        ],
+        &[&["--monitor", "0", "--"][..], &command].concat(),
     );
     assert_eq!(error_code(&output), (Some(1), "capture_failed".into()));
     let ended = begun.elapsed();

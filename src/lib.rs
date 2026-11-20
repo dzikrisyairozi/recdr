@@ -5,7 +5,6 @@ pub mod control;
 pub mod draw;
 pub mod encode;
 pub mod error;
-pub mod input;
 pub mod mcp;
 pub mod model;
 pub mod platform;

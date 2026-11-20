@@ -5,7 +5,7 @@ use std::fs::File;
 use std::os::windows::io::AsRawHandle;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use windows::Win32::Foundation::{
     CloseHandle, FILETIME, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, STILL_ACTIVE,
@@ -18,7 +18,7 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -96,4 +96,29 @@ fn set_inherit(handles: &[std::os::windows::io::RawHandle], inherit: bool) {
         // life of the process; only its inherit flag changes.
         let _ = unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT.0, flags) };
     }
+}
+
+/// Starts the wrapped command with its stdout going to our stderr.
+pub fn spawn_command(command: &[String]) -> Result<Child> {
+    if command.is_empty() {
+        return Err(Error::Usage("the command is empty".into()));
+    }
+    // `cmd /C` because npm and npx are .cmd files that cannot be started directly. The
+    // command's stdout goes to our stderr so our stdout carries only the result JSON.
+    Ok(Command::new("cmd")
+        .arg("/C")
+        .args(command)
+        .stdout(Stdio::from(std::io::stderr()))
+        .spawn()?)
+}
+
+/// Ends the command and every process it started, then waits for it.
+pub fn kill_tree(child: &mut Child) {
+    // Child::kill would end cmd.exe and leave the real command running.
+    let _ = Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &child.id().to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.wait();
 }

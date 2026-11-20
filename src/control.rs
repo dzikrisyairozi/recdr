@@ -10,8 +10,9 @@ use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
 use crate::model::{
-    Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions, RecordingResult,
-    StartInfo, State, Status, StatusEntry, StatusList, Target, WindowList,
+    Endpoint, Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions,
+    RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList, Target,
+    WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -20,6 +21,8 @@ use crate::time;
 
 const POLL: Duration = Duration::from_millis(50);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+/// A tab recorder connects to the browser first, which may take its 30 second reply limit.
+const TAB_START_TIMEOUT: Duration = Duration::from_secs(40);
 
 pub fn list_windows() -> Result<WindowList> {
     Ok(WindowList {
@@ -33,6 +36,13 @@ pub fn list_monitors() -> Result<MonitorList> {
     })
 }
 
+/// The tabs of a browser reached through CDP.
+pub fn list_tabs(endpoint: &Endpoint) -> Result<TabList> {
+    Ok(TabList {
+        tabs: capture::list_tabs(endpoint)?,
+    })
+}
+
 /// Records in this process and blocks until the recording ends.
 pub fn record(options: RecordOptions) -> Result<RecordingResult> {
     if options.duration_ms.is_none() && options.command.is_none() {
@@ -41,7 +51,18 @@ pub fn record(options: RecordOptions) -> Result<RecordingResult> {
         ));
     }
     let dir = prepare(options)?;
-    recorder::run(&dir)
+    run_noting_error(&dir)
+}
+
+/// Runs the recorder and, when it fails, stores the error in the state so `start`
+/// can report it and `status` calls the recording crashed.
+fn run_noting_error(dir: &RecordingDir) -> Result<RecordingResult> {
+    recorder::run(dir).inspect_err(|e| {
+        if let Ok(mut state) = dir.read_state() {
+            state.error = Some(e.info());
+            let _ = dir.write_state(&state);
+        }
+    })
 }
 
 /// Starts a recorder in its own process and returns once it has its first frame.
@@ -49,6 +70,7 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
     if options.command.is_some() {
         return Err(Error::Usage("start does not take a command".into()));
     }
+    let timeout = start_timeout(&options.target);
     let dir = prepare(options)?;
     let exe = std::env::current_exe()?;
     let pid = platform::spawn_detached(
@@ -58,18 +80,25 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
     )?;
     let begun = Instant::now();
     loop {
+        // Checked before the state is read, so an error written just before the
+        // recorder exited is seen.
+        let alive = platform::process_started(pid).is_some();
+        let late = begun.elapsed() >= timeout;
         // A read can race the recorder's rename; the next poll sees the new file.
-        if let Ok(state) = dir.read_state()
-            && matches!(state.status, Status::Recording | Status::Finished)
-        {
-            return Ok(StartInfo {
-                id: state.id,
-                dir: dir.path().to_path_buf(),
-                width: state.width,
-                height: state.height,
-            });
+        if let Ok(state) = dir.read_state() {
+            if let Some(info) = state.error {
+                return Err(Error::Relayed(info));
+            }
+            if matches!(state.status, Status::Recording | Status::Finished) {
+                return Ok(StartInfo {
+                    id: state.id,
+                    dir: dir.path().to_path_buf(),
+                    width: state.width,
+                    height: state.height,
+                });
+            }
         }
-        if platform::process_started(pid).is_none() || begun.elapsed() >= START_TIMEOUT {
+        if !alive || late {
             // A recorder whose first frame comes just after the limit would otherwise
             // record, unseen, until a cap; it reads the stop request on its first pass.
             let _ = dir.request_stop();
@@ -134,7 +163,7 @@ pub fn status(out: &Path, id: Option<&str>) -> Result<StatusList> {
 
 /// Body of the hidden `_recorder <dir>` command that `start` spawns.
 pub fn run_recorder(dir: PathBuf) -> Result<()> {
-    recorder::run(&RecordingDir::at(dir))
+    run_noting_error(&RecordingDir::at(dir))
         .map(|_| ())
         .inspect_err(|e| {
             // stderr is the recording's log file; `start` reports its last line.
@@ -149,8 +178,11 @@ fn derived_status(dir: &RecordingDir) -> Result<Status> {
         return Ok(Status::Finished);
     }
     let state = dir.read_state()?;
+    if state.error.is_some() {
+        return Ok(Status::Crashed);
+    }
     let young = time::now_unix_ms().saturating_sub(state.started_at_unix_ms)
-        < START_TIMEOUT.as_millis() as u64;
+        < start_timeout(&state.options.target).as_millis() as u64;
     if (state.status == Status::Starting && young)
         || platform::process_started(state.pid).is_some_and(|t| t == state.pid_started)
     {
@@ -167,11 +199,15 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
         }
         if derived_status(dir)? == Status::Crashed {
             // The recorder writes its result and then exits, so it may have done both
-            // since the read above; only a recorder gone with no result crashed.
+            // since the read above. One that failed says why in its state; only one that
+            // vanished without a word is a crash.
             if let Some(result) = dir.read_result()? {
                 return Ok(result);
             }
-            return Err(Error::RecorderCrashed(dir.id().to_owned()));
+            return Err(match dir.read_state()?.error {
+                Some(info) => Error::Relayed(info),
+                None => Error::RecorderCrashed(dir.id().to_owned()),
+            });
         }
         thread::sleep(POLL);
     }
@@ -203,8 +239,16 @@ pub fn frames(
     })
 }
 
-/// Resolves the target and writes the initial state. Nothing is created on disk
-/// when the target cannot be resolved.
+/// How long a detached recorder may take to report its first frame.
+fn start_timeout(target: &Target) -> Duration {
+    match target {
+        Target::Tab(_) => TAB_START_TIMEOUT,
+        _ => START_TIMEOUT,
+    }
+}
+
+/// Resolves a desktop target and writes the initial state. Nothing is created on disk
+/// when a desktop target cannot be resolved; a tab is resolved later, by the recorder.
 fn prepare(options: RecordOptions) -> Result<RecordingDir> {
     if options.formats.contains(&Format::Mp4) && !encode::ffmpeg::available() {
         return Err(Error::FfmpegNotFound);
@@ -214,7 +258,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
             (capture::list_windows()?, Vec::new())
         }
         Target::Region(_) | Target::Monitor(_) => (Vec::new(), capture::list_monitors()?),
-        Target::Fake(_) => (Vec::new(), Vec::new()),
+        Target::Tab(_) | Target::Fake(_) => (Vec::new(), Vec::new()),
     };
     let resolved = capture::resolve(&options.target, &windows, &monitors)?;
     let now = time::now_unix_ms();
@@ -229,6 +273,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         height: 0,
         resolved,
         options,
+        error: None,
     })?;
     Ok(dir)
 }

@@ -52,7 +52,22 @@ pub enum Target {
     Process(String),
     Region(Rect),
     Monitor(usize),
+    Tab(TabTarget),
     Fake(FakeKind),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabQuery {
+    Id(String),
+    Text(String),
+}
+
+/// A tab is found by the capture source when it connects, so the query travels unresolved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabTarget {
+    pub cdp: Endpoint,
+    pub query: TabQuery,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +79,7 @@ pub enum ResolvedKind {
         index: usize,
         crop: Option<Rect>,
     },
+    Tab(TabTarget),
     Fake(FakeKind),
 }
 
@@ -74,6 +90,28 @@ pub struct ResolvedTarget {
     pub kind: ResolvedKind,
     /// Top-left corner of the captured area in virtual-screen coordinates.
     pub origin: (i32, i32),
+}
+
+/// Where a browser's CDP server is. `Http` holds `host:port`; `Ws` holds the whole URL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Endpoint {
+    Port(u16),
+    Http(String),
+    Ws(String),
+    Chrome,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabInfo {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabList {
+    pub tabs: Vec<TabInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +135,14 @@ pub struct Frame {
 #[derive(Debug, Clone)]
 pub enum CaptureEvent {
     Frame(Frame),
+    /// `x` and `y` are frame pixels relative to the captured area; `button` is
+    /// "left", "middle" or "right".
+    Click {
+        unix_ms: u64,
+        x: i32,
+        y: i32,
+        button: &'static str,
+    },
     Closed,
 }
 
@@ -116,6 +162,7 @@ pub enum StopReason {
     SizeCapReached,
     CommandExited,
     WindowClosed,
+    TabClosed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,6 +205,17 @@ pub struct State {
     pub height: u32,
     pub resolved: ResolvedTarget,
     pub options: RecordOptions,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error: Option<ErrorInfo>,
+}
+
+/// An error in the shape it is printed, so a detached recorder can hand it to `start`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ErrorInfo {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub candidates: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

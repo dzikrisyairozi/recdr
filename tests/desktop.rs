@@ -1,4 +1,5 @@
 //! Checks that need a real desktop session. Run with `cargo test --test desktop -- --ignored`.
+#![cfg(windows)]
 
 mod common;
 

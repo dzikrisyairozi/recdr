@@ -1,5 +1,6 @@
-//! Enforces the layer rules in tasks/1-recdr/plan.md. Comment lines are ignored;
-//! everything else is matched as plain substrings.
+//! Enforces the layer rules in the Project structure section of
+//! spec/3-cdp-capture/spec.md. Comment lines are ignored; everything else is matched
+//! as plain substrings.
 
 use std::path::{Path, PathBuf};
 
@@ -68,14 +69,21 @@ fn rule_1_only_store_names_recording_files() {
 #[test]
 fn rule_2_each_front_end_library_stays_in_its_front_end() {
     forbid(&["clap"], &["src/cli.rs"]);
-    forbid(&["rmcp", "tokio", "base64"], &["src/mcp.rs"]);
+    forbid(&["rmcp", "tokio"], &["src/mcp.rs"]);
+    forbid(&["base64"], &["src/mcp.rs", "src/capture/cdp.rs"]);
+    forbid(&["tungstenite"], &["src/capture/cdp.rs"]);
 }
 
 #[test]
-fn rule_3_unsafe_only_in_three_files() {
+fn rule_3_unsafe_only_in_four_files() {
     forbid(
         &["unsafe"],
-        &["src/capture/windows.rs", "src/input.rs", "src/platform.rs"],
+        &[
+            "src/capture/windows.rs",
+            "src/capture/hook.rs",
+            "src/platform/windows.rs",
+            "src/platform/unix.rs",
+        ],
     );
 }
 
@@ -84,7 +92,6 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
     let below = [
         "recorder::",
         "capture::",
-        "input::",
         "store::",
         "analyze::",
         "encode::",
@@ -110,6 +117,20 @@ fn rule_5_model_has_no_functions() {
     for (path, code) in source_files() {
         if path == "src/model.rs" {
             assert!(!code.contains("fn "), "src/model.rs contains a function");
+        }
+    }
+}
+
+#[test]
+fn rule_6_system_differences_only_in_three_files() {
+    let allowed = ["src/capture/mod.rs", "src/platform/mod.rs", "src/lib.rs"];
+    for (path, code) in source_files() {
+        if allowed.contains(&path.as_str()) {
+            continue;
+        }
+        let code = code.replace("cfg(test)", "");
+        for needle in ["cfg(", "cfg!(", "cfg_attr("] {
+            assert!(!code.contains(needle), "{path} contains {needle:?}");
         }
     }
 }
