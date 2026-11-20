@@ -48,7 +48,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `Drop for WgcSource` takes the receiver before `control.stop()`
   - Verify: desktop tests
   - Files: src/capture/windows.rs
-- [ ] Task 9: Split GIF pieces longer than 655,350 ms
+- [x] Task 9: Split GIF pieces longer than 655,350 ms
   - Finding: Suggestion — src/encode/gif.rs:24
   - Acceptance: a 900,000 ms piece gives delays that add up to 90,000 hundredths
   - Verify: unit test on the delays
