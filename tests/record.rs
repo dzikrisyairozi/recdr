@@ -288,7 +288,10 @@ fn capture_error_ends_the_wrapped_command() {
     let out = out_dir("wrap-failing");
     std::fs::create_dir_all(&out).unwrap();
     let marker = out.join("still-running.txt");
-    // The command writes the marker after about 3 s, unless it was ended before then.
+    // The command writes the marker after about 8 s, unless it was ended before then.
+    // 3 s was too short under the full parallel suite, where the recorder can take that
+    // long to start and fail.
+    let begun = std::time::Instant::now();
     let (output, _) = record(
         "failing",
         "wrap-failing",
@@ -298,7 +301,7 @@ fn capture_error_ends_the_wrapped_command() {
             "--",
             "ping",
             "-n",
-            "4",
+            "9",
             "127.0.0.1",
             ">nul",
             "&",
@@ -309,7 +312,12 @@ fn capture_error_ends_the_wrapped_command() {
         ],
     );
     assert_eq!(error_code(&output), (Some(1), "capture_failed".into()));
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    let ended = begun.elapsed();
+    assert!(
+        ended < std::time::Duration::from_secs(7),
+        "the recorder took {ended:?} to fail"
+    );
+    std::thread::sleep(std::time::Duration::from_secs(10).saturating_sub(ended));
     assert!(!marker.exists(), "the wrapped command kept running");
 }
 
