@@ -1,0 +1,43 @@
+[package]
+name = "recdr"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Screen recorder that AI agents drive through a CLI and an MCP server"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "recdr"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+rmcp = { version = "3.11", default-features = false, features = ["server", "macros", "transport-io"] }
+schemars = "1"
+tokio = { version = "1", features = ["rt"] }
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
+gif = "0.14"
+base64 = "0.23"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "2.0.1"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_Graphics_Dwm",
+] }
+
+# Dependencies (PNG and GIF encoding) are optimised in debug builds too; unoptimised
+# PNG encoding drops most frames of a 1080p recording, so tests and `cargo run`
+# would not behave like the release binary.
+[profile.dev.package."*"]
+opt-level = 3

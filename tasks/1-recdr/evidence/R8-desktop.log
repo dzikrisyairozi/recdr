@@ -1,0 +1,14 @@
+> cargo test --test desktop -- --ignored --test-threads=1
+test closing_the_window_ends_the_recording ... ok
+test criterion_15_dropped_frames ... ok
+test detached_recorder_captures_the_desktop ... ok
+test minimized_window_is_refused ... ok
+test monitor_recording_has_the_monitor_size ... ok
+test monitors_lists_index_zero_first ... ok
+test region_off_every_monitor_is_out_of_bounds ... ok
+test region_recording_is_cropped ... ok
+test two_matching_windows_are_ambiguous ... ok
+test unknown_window_is_not_found ... ok
+test window_recording_is_about_the_window_size ... ok
+test windows_prints_a_list ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 98.17s
