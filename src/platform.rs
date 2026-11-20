@@ -64,6 +64,11 @@ pub fn spawn_detached(exe: &Path, args: &[&OsStr], stderr: File) -> Result<u32> 
         std::io::stdout().as_raw_handle(),
         std::io::stderr().as_raw_handle(),
     ];
+    // The flags belong to the whole process and the MCP server starts recorders from
+    // several threads: without the lock one call can turn them back on while another
+    // is spawning.
+    static SPAWNING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = SPAWNING.lock();
     set_inherit(&handles, false);
     let spawned = Command::new(exe)
         .args(args)

@@ -33,7 +33,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
 
 ## Phase 2: Suggestions
 
-- [ ] Task 6: Lock around the handle-inherit steps in `spawn_detached`
+- [x] Task 6: Lock around the handle-inherit steps in `spawn_detached`
   - Finding: Suggestion — src/platform.rs:60
   - Acceptance: inherit off, spawn and inherit on run under one `Mutex`
   - Verify: `rtk proxy cargo test`
