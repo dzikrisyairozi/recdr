@@ -504,9 +504,17 @@ fn version_url(authority: &str) -> Result<String> {
             "{authority} did not answer GET /json/version as a CDP server"
         ))
     };
-    stream
-        .set_read_timeout(Some(CONNECT_TIMEOUT))
-        .map_err(|_| not_cdp())?;
+    // One limit for the whole reply: a per-read timeout lets an endpoint that sends a
+    // byte every few seconds keep recdr waiting until the size limit.
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    let read = |stream: &mut TcpStream, chunk: &mut [u8]| {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(not_cdp());
+        }
+        stream.set_read_timeout(Some(left)).map_err(|_| not_cdp())?;
+        stream.read(chunk).map_err(|_| not_cdp())
+    };
     write!(
         stream,
         "GET /json/version HTTP/1.1\r\nHost: {authority}\r\n\r\n"
@@ -519,7 +527,7 @@ fn version_url(authority: &str) -> Result<String> {
         if let Some(at) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
             break at;
         }
-        let read = stream.read(&mut chunk).map_err(|_| not_cdp())?;
+        let read = read(&mut stream, &mut chunk)?;
         if read == 0 || bytes.len() > MAX_HTTP_BYTES {
             return Err(not_cdp());
         }
@@ -532,7 +540,7 @@ fn version_url(authority: &str) -> Result<String> {
     }
     let mut body = bytes.split_off(head_end + 4);
     while body.len() < length {
-        let read = stream.read(&mut chunk).map_err(|_| not_cdp())?;
+        let read = read(&mut stream, &mut chunk)?;
         if read == 0 {
             return Err(not_cdp());
         }
@@ -762,6 +770,28 @@ mod tests {
         assert_eq!(click(&at("-1", "5"), frame), None);
         assert_eq!(click(&at("5", "625"), frame), None);
         assert_eq!(click(&at("1263", "624"), frame), Some((2526, 1248, "left")));
+    }
+
+    #[test]
+    fn a_slow_version_reply_fails_within_the_connect_limit() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let authority = listener.local_addr().unwrap().to_string();
+        thread::spawn(move || {
+            let (mut peer, _) = listener.accept().unwrap();
+            for _ in 0..12 {
+                if peer.write_all(b"H").is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
+        });
+        let begun = Instant::now();
+        assert!(version_url(&authority).is_err());
+        assert!(
+            begun.elapsed() < CONNECT_TIMEOUT + Duration::from_secs(2),
+            "{:?}",
+            begun.elapsed()
+        );
     }
 
     #[test]

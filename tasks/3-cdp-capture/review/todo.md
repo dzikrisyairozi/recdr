@@ -23,7 +23,7 @@ Plan: `tasks/3-cdp-capture/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: a click and the frame showing the page's reaction are within one frame interval
   - Verify: browser test with a page that changes color on mousedown
   - Files: src/capture/cdp.rs, src/model.rs, src/recorder.rs, src/capture/windows.rs, src/capture/macos.rs, src/capture/fake.rs
-- [ ] Task 4: One deadline per connect step, and stop a late recorder
+- [x] Task 4: One deadline per connect step, and stop a late recorder
   - Finding: Suggestion — src/capture/cdp.rs:465, src/control.rs:101
   - Acceptance: a dripping listener fails within 6 s; a recorder that `start` gave up on ends
   - Verify: test with a local `TcpListener`; `rtk proxy cargo test`

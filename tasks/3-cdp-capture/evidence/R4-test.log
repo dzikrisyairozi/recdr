@@ -1,0 +1,21 @@
+> cargo fmt --check
+exit: 0
+> cargo clippy --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.78s
+> cargo test 
+     Running unittests src\lib.rs (target\debug\deps\recdr-cb6074dc6860e945.exe)
+test result: ok. 69 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.01s
+     Running unittests src\main.rs (target\debug\deps\recdr-546b6e146a9d95da.exe)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\browser.rs (target\debug\deps\browser-e7b9665d0628fa5d.exe)
+test result: ok. 0 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests\cli.rs (target\debug\deps\cli-ed93a5012ad5f49f.exe)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+     Running tests\control.rs (target\debug\deps\control-671ff135e64a9f3a.exe)
+test start_returns_quickly_and_stop_ends_the_recorder ... FAILED
+failures:
+thread 'start_returns_quickly_and_stop_ends_the_recorder' (53888) panicked at tests\control.rs:24:5:
+failures:
+    start_returns_quickly_and_stop_ends_the_recorder
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.53s
+exit: 101
