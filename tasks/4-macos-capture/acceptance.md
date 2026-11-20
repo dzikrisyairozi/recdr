@@ -107,7 +107,7 @@ Could not be tried: no such Mac.
 2. Pass on this Mac and the runner. `windows_lists_the_test_window`.
 3. Pass on this Mac and the runner. `window_recording_has_the_content_size`.
 4. Pass on this Mac and the runner. `window_and_process_find_it_and_two_are_ambiguous`.
-5. Pass on this Mac (`region_inside_the_green_page_is_green`). Fails on the runner every time: the center reads (223, 250, 223) where the page is #00aa00, and a monitor recording reads the same value at the same screen point, so the region matches the screen and what the runner shows there is pale. Cause not known; the test is unchanged, for the owner to decide.
+5. Pass on this Mac (`region_inside_the_green_page_is_green`). Fails on the runner every time: the center reads (223, 250, 223) where the page is #00aa00, and a monitor recording reads the same value at the same screen point, so the region matches the screen and what the runner shows there is pale. Cause not known. The owner chose to skip it on CI (2026-11-20); it still runs on a Mac.
 6. Pass on this Mac and the runner. `monitor_recording_has_the_monitor_size`.
 7. Pass on this Mac and the runner. `still_page_stores_few_frames`.
 8. Pass on this Mac and the runner. `ending_chrome_ends_the_recording`.
