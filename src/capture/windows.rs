@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError
 use std::time::Duration;
 
 use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO};
 use windows::Win32::UI::WindowsAndMessaging::{IsIconic, MONITORINFOF_PRIMARY};
 use windows_capture::capture::{CaptureControl, Context, GraphicsCaptureApiHandler};
@@ -35,19 +36,36 @@ fn rect(r: RECT) -> Rect {
     }
 }
 
+/// The window as drawn, without the invisible resize border that `GetWindowRect`
+/// includes on Windows 10 and 11. The capture's picture starts at this corner.
+fn visible_frame(hwnd: HWND) -> Option<RECT> {
+    let mut r = RECT::default();
+    // SAFETY: `r` is a RECT and the size passed is its size; the call only writes it.
+    unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            (&raw mut r).cast(),
+            mem::size_of::<RECT>() as u32,
+        )
+    }
+    .ok()
+    .map(|()| r)
+}
+
 /// Visible top-level windows. One window that cannot be read is skipped or listed
 /// with blanks; it never fails the whole list.
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
     let windows = Window::enumerate().map_err(|e| Error::CaptureFailed(e.to_string()))?;
     let mut out = Vec::new();
     for window in windows {
-        let (Ok(title), Ok(bounds)) = (window.title(), window.rect()) else {
+        let hwnd = window.as_raw_hwnd();
+        let (Ok(title), Some(bounds)) = (window.title(), visible_frame(HWND(hwnd))) else {
             continue;
         };
         if title.is_empty() {
             continue;
         }
-        let hwnd = window.as_raw_hwnd();
         // SAFETY: the handle came from EnumWindows; IsIconic only reads window state
         // and returns false for a handle that has since been destroyed.
         let minimized = unsafe { IsIconic(HWND(hwnd)) }.as_bool();

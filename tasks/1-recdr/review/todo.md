@@ -14,7 +14,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `get_frames` over the limit returns `too_many_frames` and `samples/` stays empty
   - Verify: `rtk proxy cargo test --test mcp`
   - Files: src/control.rs, src/mcp.rs, src/cli.rs, tests/mcp.rs
-- [ ] Task 3: Use the extended frame bounds for windows
+- [x] Task 3: Use the extended frame bounds for windows
   - Finding: Important — src/capture/windows.rs:44
   - Acceptance: `recdr windows` bounds equal the recorded frame size; a click is stored within 2 px of where it happened
   - Verify: desktop test comparing bounds and frame size; one manual click

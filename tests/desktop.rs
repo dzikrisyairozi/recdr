@@ -94,10 +94,9 @@ fn window_recording_is_about_the_window_size() {
     let _ = child.wait();
     let result = ok(&output);
     assert!(result["frames_stored"].as_u64().unwrap() >= 1);
+    // The listed bounds are the visible frame, which is what the capture holds.
     for side in ["width", "height"] {
-        let got = result[side].as_i64().unwrap();
-        let listed = window["bounds"][side].as_i64().unwrap();
-        assert!((got - listed).abs() <= 40, "{side}: {got} vs {listed}");
+        assert_eq!(result[side], window["bounds"][side], "{side}");
     }
 }
 
