@@ -292,24 +292,28 @@ fn capture_error_ends_the_wrapped_command() {
     // 3 s was too short under the full parallel suite, where the recorder can take that
     // long to start and fail.
     let begun = std::time::Instant::now();
+    let marker_path = marker.to_str().unwrap();
+    #[cfg(windows)]
+    let command = [
+        "ping",
+        "-n",
+        "9",
+        "127.0.0.1",
+        ">nul",
+        "&",
+        "echo",
+        "x",
+        ">",
+        marker_path,
+    ];
+    #[cfg(unix)]
+    let script = format!("sleep 8; echo x > '{marker_path}'");
+    #[cfg(unix)]
+    let command = ["sh", "-c", &script];
     let (output, _) = record(
         "failing",
         "wrap-failing",
-        &[
-            "--monitor",
-            "0",
-            "--",
-            "ping",
-            "-n",
-            "9",
-            "127.0.0.1",
-            ">nul",
-            "&",
-            "echo",
-            "x",
-            ">",
-            marker.to_str().unwrap(),
-        ],
+        &[&["--monitor", "0", "--"][..], &command].concat(),
     );
     assert_eq!(error_code(&output), (Some(1), "capture_failed".into()));
     let ended = begun.elapsed();

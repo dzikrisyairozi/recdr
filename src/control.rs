@@ -198,8 +198,12 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
             return Ok(result);
         }
         if derived_status(dir)? == Status::Crashed {
-            // A recorder that failed says why in its state; only one that vanished
-            // without a word is a crash.
+            // The recorder writes its result and then exits, so it may have done both
+            // since the read above. One that failed says why in its state; only one that
+            // vanished without a word is a crash.
+            if let Some(result) = dir.read_result()? {
+                return Ok(result);
+            }
             return Err(match dir.read_state()?.error {
                 Some(info) => Error::Relayed(info),
                 None => Error::RecorderCrashed(dir.id().to_owned()),
