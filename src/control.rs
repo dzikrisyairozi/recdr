@@ -198,7 +198,12 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
             return Ok(result);
         }
         if derived_status(dir)? == Status::Crashed {
-            return Err(Error::RecorderCrashed(dir.id().to_owned()));
+            // A recorder that failed says why in its state; only one that vanished
+            // without a word is a crash.
+            return Err(match dir.read_state()?.error {
+                Some(info) => Error::Relayed(info),
+                None => Error::RecorderCrashed(dir.id().to_owned()),
+            });
         }
         thread::sleep(POLL);
     }

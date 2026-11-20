@@ -4,7 +4,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
 
 ## Phase 1: Important
 
-- [ ] Task 1: Relay a stored recorder error from `await_result`
+- [x] Task 1: Relay a stored recorder error from `await_result`
   - Finding: Important — src/control.rs:163
   - Acceptance: a detached recording whose MP4 step fails returns `encode_failed` from `stop`, not `recorder_crashed`
   - Verify: new test in `tests/record.rs`; `rtk proxy cargo test`

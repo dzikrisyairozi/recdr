@@ -279,3 +279,13 @@ fn frames_of_a_running_recording_is_not_finished() {
     assert_eq!(code, Some(1));
     assert_eq!(err["code"], "recording_not_finished");
 }
+
+#[test]
+fn a_recorder_error_reaches_stop() {
+    let out = out_dir("start-failing");
+    let id = start("failing", &out, &[]);
+    sleep(Duration::from_secs(2));
+    let (code, err) = error(&run("failing", &out, &["stop", &id]));
+    assert_eq!(code, Some(1));
+    assert_eq!(err["code"], "capture_failed", "{err}");
+}
