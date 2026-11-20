@@ -14,7 +14,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: quitting while a recording is starting leaves no recorder process; `on_exit` returns within its time limit
   - Verify: unit test for the exit loop; manual Quit from the Dock on macOS
   - Files: src/gui/app.rs, src/gui/state.rs
-- [ ] Checkpoint: fmt, clippy for three targets, tests and CI green
+- [x] Checkpoint: fmt, clippy for three targets, tests and CI green (local; CI runs once pushed)
 
 ## Phase 2: Suggestions
 
@@ -48,9 +48,9 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: a failed encode leaves the old target and no `.part.` file
   - Verify: `rtk proxy cargo test --test export`
   - Files: tests/export.rs
-- [ ] Task 9 (optional): Smaller worker and `App::new` signatures
+- [x] Task 9 (optional): Smaller worker and `App::new` signatures — declined: `App::new` returning its first action keeps that action in the tested state machine (state.rs test at `App::new`), and `perform` needs `Option` for `Quit`
   - Finding: Suggestion — src/gui/worker.rs:12, src/gui/state.rs:126
   - Acceptance: `perform` returns `Event`; `App::new` returns `App`
   - Verify: `rtk proxy cargo test`
   - Files: src/gui/worker.rs, src/gui/state.rs, src/gui/app.rs
-- [ ] Checkpoint: CI green; spec drift items decided
+- [x] Checkpoint: CI green; spec drift items decided (spec updated; CI runs once pushed)

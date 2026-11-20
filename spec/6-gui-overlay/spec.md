@@ -99,7 +99,7 @@ Writes one file from a finished recording.
 | `--until <time>` | End of the part to keep. Default: the end of the recording |
 | `--crop x,y,w,h` | Rectangle to keep, in pixels, relative to the top-left corner of the recording. Default: the whole picture |
 
-It prints `{"path", "width", "height", "duration_ms", "frames"}`, where `frames` is the number of pictures written, and `width` and `height` are the size of the pictures in the file (for an MP4 of an odd size, one pixel more, as in a recording).
+It prints `{"path", "width", "height", "duration_ms", "frames"}`, where `frames` is the number of pictures written, and `width` and `height` are the size of the pictures in the file (for an MP4, the video size of `native-mp4`: one pixel more for an odd side, and at least 160 by 120).
 
 Rules:
 
@@ -307,7 +307,7 @@ Never:
 
 Criteria 1 to 10 are automated and run on every system. Criteria 11 to 23 are the by-hand checklist, run on Windows and on macOS.
 
-1. `recdr export <id> --file out.gif` on a 3-second recording of the synthetic source writes a GIF of the recording's size and between 2.9 and 3.1 seconds, and prints the result object.
+1. `recdr export <id> --file out.gif` on a 3-second recording of the synthetic source writes a GIF of the recording's size whose length matches the printed `duration_ms` (3000 to 3500) within 5 ms per GIF frame, and prints the result object. A fixed 2.9 to 3.1 s band failed on the GIF's centisecond delays.
 2. With `--from 1s --until 2s` the GIF is between 0.9 and 1.1 seconds long, and its first picture equals the stored frame current at 1 second.
 3. With `--crop 10,20,100,80` every picture is 100 by 80, and its top-left pixel equals pixel (10, 20) of the matching stored frame.
 4. For a recording with a click at (60, 50), the manifest export builds for `--crop 10,20,100,80` has that click at (50, 30). A click outside the crop, or before `--from`, is not in it (unit test, because the synthetic source reports no clicks).
