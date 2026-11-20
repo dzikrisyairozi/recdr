@@ -168,6 +168,7 @@ The `code` values are part of the interface. This is the full list for this modu
 | `recorder_start_failed` | The recorder did not report that it was recording within 5 seconds, or exited first. |
 | `recording_not_found` | No recording with this id under the output root. |
 | `recording_not_active` | `mark` on a recording that has finished or crashed. |
+| `recording_not_finished` | `frames` on a recording that is still running or crashed without a result. |
 | `recorder_crashed` | `stop` on a recording whose recorder process is gone and left no result. |
 | `too_many_frames` | MCP `get_frames` matched more than 8 frames. |
 | `capture_failed` | The capture API returned an error. |

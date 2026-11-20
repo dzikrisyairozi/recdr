@@ -58,7 +58,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: `..\x` and absolute paths give `recording_not_found`
   - Verify: unit test
   - Files: src/store.rs
-- [ ] Task 11: Error code for `frames` on an unfinished recording
+- [x] Task 11: Error code for `frames` on an unfinished recording
   - Finding: Suggestion — src/control.rs:178 (needs the spec change first)
   - Acceptance: the code named in the spec is returned
   - Verify: `rtk proxy cargo test --test record`

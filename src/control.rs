@@ -183,7 +183,7 @@ pub fn frames(
 ) -> Result<FrameList> {
     let dir = RecordingDir::open(out, id)?;
     if dir.read_result()?.is_none() {
-        return Err(Error::RecordingNotFound(id.to_owned()));
+        return Err(Error::RecordingNotFinished(id.to_owned()));
     }
     let manifest = dir.read_manifest()?;
     let diffs = dir.read_diff()?;
