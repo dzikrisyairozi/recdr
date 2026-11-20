@@ -75,7 +75,8 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 ### Checkpoint A: Windows is unchanged (needs a pull request)
 - [x] The three commands, the desktop tests and the browser tests pass on Windows. (`evidence/checkpoint-A-test.log`: `criterion_15_dropped_frames` failed once in a 73 s run, then passed on the unchanged tree with 12 stored and 0 dropped; it also passed at Task 1. Browser tests: `evidence/T3-test.log`.)
 - [ ] By hand, by the owner: a click during `recdr record --monitor 0 --duration 5s` on Windows is in `manifest.json` and is a ring in the GIF (criterion 19).
-- [ ] The owner pushes the branch and opens a draft pull request; the build stops and asks, and asks whether it may push after each later task (plan decision 13). The three CI jobs are green.
+- [x] The owner pushes the branch and opens a draft pull request; the build stops and asks, and asks whether it may push after each later task (plan decision 13). The three CI jobs are green.
+  - 2026-11-20: #8, draft, base `feat/3-cdp-capture`. Run  green on all three jobs.
 
 ## Phase 2: listing, on a Mac
 
@@ -142,7 +143,8 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
 
 ### Checkpoint B: recdr sees the Mac's screen
 - [x] `recdr monitors` and `recdr windows` print the Mac's displays and windows. (One display of 3024 by 1964 with `primary` true; 21 windows, 14 of them `minimized`. The four macOS desktop tests pass.)
-- [ ] The three CI jobs are green on the pull request.
+- [x] The three CI jobs are green on the pull request.
+  - 2026-11-20: run , all three jobs green.
 
 ## Phase 3: recording
 
@@ -232,5 +234,6 @@ A desktop test is a test in `tests/desktop.rs`, marked `#[ignore]`, run with `ca
   - Scope: S
 
 ### Checkpoint D: complete (needs the pull request)
-- [ ] The three CI jobs are green.
+- [x] The three CI jobs are green.
+  - 2026-11-20: run , all three jobs green; the green region test is skipped on the macOS runner only (`5406a89`, the owner's choice) and still runs on a Mac.
 - [ ] `acceptance.md` has a result for each of the 20 criteria.
