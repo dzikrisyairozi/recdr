@@ -12,7 +12,9 @@ Requires Rust 1.98 or later. Desktop targets (windows, regions, monitors) need W
 cargo build --release
 ```
 
-The binary is `target/release/recdr` (`recdr.exe` on Windows). MP4 output also needs `ffmpeg` on `PATH`.
+The binary is `target/release/recdr` (`recdr.exe` on Windows).
+
+MP4 output uses the H.264 encoder of the system on Windows (Media Foundation) and macOS (AVFoundation), and `ffmpeg` on `PATH` on Linux. Windows "N" editions have no Media Foundation encoder until the Media Feature Pack is installed. On Windows every MP4 is at least 160 by 120 (smaller recordings get black columns and rows) and carries a silent AAC track, both from the `windows-capture` encoder.
 
 On Linux, `windows`, `monitors` and the desktop targets fail with `unsupported_platform`. A command after `--` runs without a shell there, so write `-- sh -c "npm test && echo done"` when you need one.
 
@@ -154,14 +156,14 @@ Clicks in a tab come from the page: recdr adds a listener for mouse presses to t
 | `ambiguous_target` | More than one matches; `candidates` lists them. |
 | `target_minimized` | The window is minimized and has nothing to capture. |
 | `region_out_of_bounds` | `--region` is not inside one monitor. |
-| `ffmpeg_not_found` | `--format mp4` without `ffmpeg` on `PATH`. |
+| `ffmpeg_not_found` | `--format mp4` on Linux without `ffmpeg` on `PATH`. |
 | `recorder_start_failed` | The background recorder exited without saying why, or did not report its first frame in time. |
 | `recording_not_found` | No recording with that id under the output root. |
 | `recording_not_active` | `stop` or `mark` on a recording that has ended. |
 | `recorder_crashed` | The background recorder exited without finishing. |
 | `too_many_frames` | `get_frames` would return more than 8 frames. |
 | `capture_failed` | The capture source failed. |
-| `encode_failed` | Writing the GIF or MP4 failed. |
+| `encode_failed` | Writing the GIF or MP4 failed, or, before recording, the system has no H.264 encoder that works. |
 | `unsupported_platform` | `windows`, `monitors` or a desktop target on Linux. |
 | `permission_denied` | macOS has not given the program that started recdr the Screen Recording permission. |
 | `cdp_connect_failed` | The browser cannot be reached, does not speak CDP, or did not answer within 30 seconds. |
@@ -211,6 +213,8 @@ Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_re
 - When a recorded window is resized, the first frame at the new size is discarded by the capture library. A window that then never repaints keeps showing its old image in the recording. Frames of another size are scaled to fit the first frame's size, on black.
 - A recording holds whatever was on screen, including secrets. recdr never uploads anything; recordings stay in the output root.
 - Keyboard input is never recorded.
+- The MP4 path on a Windows "N" edition without the Media Feature Pack has not been tried. recdr checks for a working encoder before it records, so the expected result is `encode_failed` before anything is captured.
+- The tests check MP4 files by their headers and by decoding frames with ffmpeg. Playing them in the Windows media player, QuickTime Player, Chrome and Safari has not been checked yet.
 
 ## License
 

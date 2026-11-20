@@ -218,7 +218,7 @@ fn finalize(
         None
     };
     let mp4 = if state.options.formats.contains(&Format::Mp4) {
-        Some(encode::ffmpeg::encode(dir, &manifest)?)
+        Some(encode::mp4(dir, &manifest)?)
     } else {
         None
     };

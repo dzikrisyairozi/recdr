@@ -5,6 +5,9 @@ use std::process::Output;
 use common::{json, out_dir, recdr};
 use serde_json::Value;
 
+/// True where ffmpeg is the encoder.
+const NEEDS_FFMPEG: bool = cfg!(not(any(windows, target_os = "macos")));
+
 fn record(fake: &str, name: &str, args: &[&str]) -> (Output, std::path::PathBuf) {
     let out = out_dir(name);
     let output = recdr()
@@ -350,8 +353,8 @@ fn tool_runs(name: &str) -> bool {
 
 #[test]
 fn mp4_is_h264_of_the_recording_length() {
-    if !tool_runs("ffmpeg") || !tool_runs("ffprobe") {
-        println!("skipped: ffmpeg or ffprobe not on PATH");
+    if NEEDS_FFMPEG && !tool_runs("ffmpeg") {
+        println!("skipped: ffmpeg not on PATH");
         return;
     }
     let (output, _) = record(
@@ -361,32 +364,32 @@ fn mp4_is_h264_of_the_recording_length() {
     );
     let result = ok(&output);
     assert!(std::path::Path::new(result["gif"].as_str().unwrap()).is_file());
-    let mp4 = result["mp4"].as_str().unwrap();
-    let probe = std::process::Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_name:format=duration",
-            "-of",
-            "json",
-            mp4,
-        ])
-        .output()
-        .unwrap();
-    let probe = json(&probe.stdout);
-    assert_eq!(probe["streams"][0]["codec_name"], "h264");
-    let seconds: f64 = probe["format"]["duration"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let expected = result["duration_ms"].as_f64().unwrap() / 1000.0;
-    assert!((seconds - expected).abs() <= 0.5, "{seconds} vs {expected}");
+    let facts = common::mp4::facts(std::path::Path::new(result["mp4"].as_str().unwrap()));
+    assert!(
+        ["avc1", "avc3"].contains(&facts.codec.as_str()),
+        "{}",
+        facts.codec
+    );
+    assert_eq!((facts.width, facts.height), (320, 240));
+    let expected = result["duration_ms"].as_u64().unwrap();
+    assert!(
+        facts.duration_ms.abs_diff(expected) <= 1000 / 15 + 1,
+        "{} vs {expected}",
+        facts.duration_ms
+    );
 }
 
 #[test]
-fn mp4_without_ffmpeg_is_refused_before_anything_is_written() {
+#[should_panic(expected = "is not an MP4 file")]
+fn facts_refuses_a_file_that_is_not_an_mp4() {
+    let path = out_dir("not-mp4").join("not.mp4");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"not an mp4").unwrap();
+    common::mp4::facts(&path);
+}
+
+#[test]
+fn mp4_with_no_ffmpeg_on_path() {
     let out = out_dir("no-ffmpeg");
     let empty = out_dir("no-ffmpeg-path");
     let output = recdr()
@@ -394,13 +397,30 @@ fn mp4_without_ffmpeg_is_refused_before_anything_is_written() {
         .env("PATH", &empty)
         .args(["record", "--out"])
         .arg(&out)
-        .args(["--monitor", "0", "--duration", "1s", "--format", "mp4"])
+        .args(["--monitor", "0", "--duration", "2s", "--format", "mp4"])
         .output()
         .unwrap();
-    assert_eq!(error_code(&output), (Some(1), "ffmpeg_not_found".into()));
-    let made = std::fs::read_dir(&out)
-        .unwrap()
-        .filter(|e| e.as_ref().unwrap().path().is_dir())
-        .count();
-    assert_eq!(made, 0);
+    if NEEDS_FFMPEG {
+        assert_eq!(error_code(&output), (Some(1), "ffmpeg_not_found".into()));
+        let made = std::fs::read_dir(&out)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().path().is_dir())
+            .count();
+        assert_eq!(made, 0);
+    } else {
+        let result = ok(&output);
+        let facts = common::mp4::facts(std::path::Path::new(result["mp4"].as_str().unwrap()));
+        assert!(
+            ["avc1", "avc3"].contains(&facts.codec.as_str()),
+            "{}",
+            facts.codec
+        );
+        assert_eq!((facts.width, facts.height), (320, 240));
+        let expected = result["duration_ms"].as_u64().unwrap();
+        assert!(
+            facts.duration_ms.abs_diff(expected) <= 1000 / 15 + 1,
+            "{} vs {expected}",
+            facts.duration_ms
+        );
+    }
 }

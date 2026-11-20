@@ -72,6 +72,18 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
     forbid(&["rmcp", "tokio"], &["src/mcp.rs"]);
     forbid(&["base64"], &["src/mcp.rs", "src/capture/cdp.rs"]);
     forbid(&["tungstenite"], &["src/capture/cdp.rs"]);
+    forbid(
+        &["windows_capture"],
+        &["src/capture/windows.rs", "src/encode/mf.rs"],
+    );
+    forbid(
+        &[
+            "objc2_av_foundation",
+            "objc2_core_video",
+            "objc2_core_media",
+        ],
+        &["src/encode/avf.rs"],
+    );
     forbid(&["screencapturekit"], &["src/capture/macos.rs"]);
     forbid(
         &["objc2_core_graphics"],
@@ -79,12 +91,16 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
     );
     forbid(
         &["objc2_core_foundation"],
-        &["src/capture/macos.rs", "src/capture/tap.rs"],
+        &[
+            "src/capture/macos.rs",
+            "src/capture/tap.rs",
+            "src/encode/avf.rs",
+        ],
     );
 }
 
 #[test]
-fn rule_3_unsafe_only_in_six_files() {
+fn rule_3_unsafe_only_in_seven_files() {
     forbid(
         &["unsafe"],
         &[
@@ -92,6 +108,7 @@ fn rule_3_unsafe_only_in_six_files() {
             "src/capture/hook.rs",
             "src/platform/windows.rs",
             "src/platform/unix.rs",
+            "src/encode/avf.rs",
             "src/capture/macos.rs",
             "src/capture/tap.rs",
         ],
@@ -134,7 +151,11 @@ fn rule_5_model_has_no_functions() {
 
 #[test]
 fn rule_6_system_differences_only_in_three_files() {
-    let allowed = ["src/capture/mod.rs", "src/platform/mod.rs", "src/lib.rs"];
+    let allowed = [
+        "src/capture/mod.rs",
+        "src/platform/mod.rs",
+        "src/encode/mod.rs",
+    ];
     for (path, code) in source_files() {
         if allowed.contains(&path.as_str()) {
             continue;
@@ -142,6 +163,15 @@ fn rule_6_system_differences_only_in_three_files() {
         let code = code.replace("cfg(test)", "");
         for needle in ["cfg(", "cfg!(", "cfg_attr("] {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
+        }
+    }
+}
+
+#[test]
+fn rule_7_system_encoders_do_not_name_ffmpeg() {
+    for (path, code) in source_files() {
+        if ["src/encode/mf.rs", "src/encode/avf.rs"].contains(&path.as_str()) {
+            assert!(!code.contains("ffmpeg"), "{path} contains \"ffmpeg\"");
         }
     }
 }

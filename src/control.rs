@@ -250,8 +250,8 @@ fn start_timeout(target: &Target) -> Duration {
 /// Resolves a desktop target and writes the initial state. Nothing is created on disk
 /// when a desktop target cannot be resolved; a tab is resolved later, by the recorder.
 fn prepare(options: RecordOptions) -> Result<RecordingDir> {
-    if options.formats.contains(&Format::Mp4) && !encode::ffmpeg::available() {
-        return Err(Error::FfmpegNotFound);
+    if options.formats.contains(&Format::Mp4) {
+        encode::check_mp4()?;
     }
     let (windows, monitors) = match &options.target {
         Target::WindowId(_) | Target::WindowTitle(_) | Target::Process(_) => {

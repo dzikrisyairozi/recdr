@@ -1,0 +1,5 @@
+﻿> RECDR_FAKE_SOURCE=moving PATH=<empty dir>;C:\Windows\System32 recdr record --monitor 0 --duration 3s --format gif,mp4
+stop_reason duration_reached, duration_ms 3003, 320 by 240, frames_stored 46, dropped_frames 0, exit 0
+> ffprobe -show_entries stream=... recording.mp4
+stream|index=0|codec_name=h264|profile=Main|width=320|height=240|pix_fmt=yuv420p|duration=3.066600|nb_frames=46
+stream|index=1|codec_name=aac|profile=unknown|duration=3.066604|nb_frames=N/A

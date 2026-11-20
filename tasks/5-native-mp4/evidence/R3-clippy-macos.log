@@ -1,0 +1,2 @@
+> DOCS_RS=1 cargo clippy --all-targets --target aarch64-apple-darwin -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.31s
