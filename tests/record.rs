@@ -351,7 +351,10 @@ fn capture_error_ends_the_wrapped_command() {
     );
     assert_eq!(error_code(&output), (Some(1), "capture_failed".into()));
     let ended = begun.elapsed();
-    assert!(ended < std::time::Duration::from_secs(7), "the recorder took {ended:?} to fail");
+    assert!(
+        ended < std::time::Duration::from_secs(7),
+        "the recorder took {ended:?} to fail"
+    );
     std::thread::sleep(std::time::Duration::from_secs(10).saturating_sub(ended));
     assert!(!marker.exists(), "the wrapped command kept running");
 }

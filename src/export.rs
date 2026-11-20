@@ -58,7 +58,10 @@ pub fn run(dir: &RecordingDir, options: &ExportOptions) -> Result<ExportResult> 
         Format::Gif => "gif",
         Format::Mp4 => "mp4",
     };
-    let temp = options.file.with_extension(format!("part.{ext}"));
+    // The process id keeps two recdr processes exporting to one target apart.
+    let temp = options
+        .file
+        .with_extension(format!("part.{}.{ext}", std::process::id()));
     let written = match options.format {
         Format::Gif => encode::gif::encode(dir, &part, crop, &temp),
         Format::Mp4 => encode::mp4(dir, &part, crop, &temp),

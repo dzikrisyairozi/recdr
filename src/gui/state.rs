@@ -103,6 +103,8 @@ pub enum Event {
         path: PathBuf,
     },
     Exported(PathBuf),
+    /// An export failed. Kept apart from `Failed`, which a failed preview also sends.
+    ExportFailed(String),
     Failed(String),
 }
 
@@ -417,9 +419,13 @@ fn editing(app: &mut App, event: Event, elapsed: u64) -> Vec<Action> {
             app.message = Some(path.display().to_string());
             return Vec::new();
         }
-        Event::Failed(_) if edit.exporting && edit.closing => return vec![Action::Quit],
-        Event::Failed(text) => {
+        Event::ExportFailed(_) if edit.exporting && edit.closing => return vec![Action::Quit],
+        Event::ExportFailed(text) if edit.exporting => {
             edit.exporting = false;
+            app.message = Some(text);
+            return Vec::new();
+        }
+        Event::Failed(text) => {
             edit.loading = false;
             app.message = Some(text);
             return Vec::new();
@@ -690,13 +696,24 @@ mod tests {
         assert_eq!(step(&mut app, Event::Failed("x".into()), 2), [Action::Quit]);
     }
 
-    /// Quit from the Dock ends the event loop at once, so on_exit has to finish what a
-    /// close request starts: wait for a starting recording, then stop it.
+    /// A preview that fails while an export runs is not the export failing.
+    #[test]
+    fn a_failed_preview_leaves_the_export_running() {
+        let mut app = editing_app(3000);
+        step(&mut app, Event::Save("s.gif".into()), 30);
+        step(&mut app, Event::Failed("frame unreadable".into()), 40);
+        assert!(edit(&app).exporting);
+        assert_eq!(step(&mut app, Event::Save("t.gif".into()), 50), []);
+        step(&mut app, Event::ExportFailed("disk full".into()), 60);
+        assert!(!edit(&app).exporting);
+        assert_eq!(app.message.as_deref(), Some("disk full"));
+    }
+
     #[test]
     fn closing_waits_for_an_export() {
         for outcome in [
             Event::Exported("s.gif".into()),
-            Event::Failed("disk full".into()),
+            Event::ExportFailed("disk full".into()),
         ] {
             let mut app = editing_app(3000);
             let save = step(&mut app, Event::Save("s.gif".into()), 30);
@@ -706,6 +723,8 @@ mod tests {
         }
     }
 
+    /// Quit from the Dock ends the event loop at once, so on_exit has to finish what a
+    /// close request starts: wait for a starting recording, then stop it.
     #[test]
     fn winding_down_stops_a_starting_recording() {
         let mut app = self::app();
@@ -851,6 +870,7 @@ mod tests {
                 path: "p.png".into(),
             },
             Event::Exported("e.gif".into()),
+            Event::ExportFailed("x".into()),
             Event::Failed("f".into()),
         ]
     }

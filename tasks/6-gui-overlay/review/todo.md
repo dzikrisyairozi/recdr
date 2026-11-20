@@ -23,7 +23,7 @@ Plan: `tasks/6-gui-overlay/review/plan.md`. PR: https://github.com/dzikrisyairoz
   - Acceptance: closing during an export quits after `Exported` or `Failed`, with no `.part.` file left
   - Verify: unit test in `src/gui/state.rs`
   - Files: src/gui/state.rs
-- [ ] Task 4: One temp file per export, and a separate failure event
+- [x] Task 4: One temp file per export, and a separate failure event
   - Finding: Suggestion — src/export.rs:48, src/gui/state.rs:387
   - Acceptance: the temp name holds the process id; a failed preview does not clear `exporting`
   - Verify: unit test in `state.rs`; `tests/export.rs`

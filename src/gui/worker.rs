@@ -41,10 +41,17 @@ pub fn perform(out: &Path, action: Action) -> Option<Event> {
                 )
             })
         }
-        Action::Export(request) => request
-            .into_options()
-            .and_then(control::export)
-            .map(|result| Event::Exported(result.path)),
+        Action::Export(request) => {
+            return Some(
+                request
+                    .into_options()
+                    .and_then(control::export)
+                    .map_or_else(
+                        |error| Event::ExportFailed(error.to_string()),
+                        |result| Event::Exported(result.path),
+                    ),
+            );
+        }
     };
     Some(outcome.unwrap_or_else(|error| Event::Failed(error.to_string())))
 }
@@ -82,7 +89,9 @@ mod tests {
         ];
         for action in actions {
             match perform(&out, action.clone()) {
-                Some(Event::Failed(text)) => assert!(text.contains("nope"), "{action:?}: {text}"),
+                Some(Event::Failed(text) | Event::ExportFailed(text)) => {
+                    assert!(text.contains("nope"), "{action:?}: {text}");
+                }
                 other => panic!("{action:?} gave {other:?}"),
             }
         }
