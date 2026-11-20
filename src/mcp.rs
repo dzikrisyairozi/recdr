@@ -15,7 +15,7 @@ use tokio::runtime as tokio_rt;
 use crate::control;
 use crate::error::{self, Error};
 use crate::model::FrameRef;
-use crate::request::{self, RecordRequest};
+use crate::request::{self, ExportRequest, RecordRequest};
 
 const MAX_FRAMES: usize = 8;
 const DEFAULT_MAX_WIDTH: u32 = 1024;
@@ -149,6 +149,17 @@ impl RecdrServer {
             control::wait(&out, &started.id)
         });
         Ok(reply(recorded.await, |r| Ok(vec![png(&r.contact_sheet)?])))
+    }
+
+    #[tool(
+        description = "Write a GIF or an MP4 from a finished recording, optionally trimmed with from and until and cropped with crop."
+    )]
+    async fn export(
+        &self,
+        Parameters(params): Parameters<ExportRequest>,
+    ) -> std::result::Result<CallToolResult, ErrorData> {
+        let exported = run(move || params.into_options().and_then(control::export));
+        Ok(reply(exported.await, |_| Ok(Vec::new())))
     }
 
     #[tool(description = "Label the current moment of a running recording.")]

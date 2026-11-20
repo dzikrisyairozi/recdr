@@ -1,31 +1,38 @@
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::PathBuf;
+use std::path::Path;
 
 use gif::{Encoder, Frame, Repeat};
 
 use super::{render, timeline};
 use crate::error::{Error, Result};
-use crate::model::Manifest;
+use crate::model::{Manifest, Rect};
 use crate::store::RecordingDir;
 
-/// Writes `recording.gif`, one GIF frame per timeline piece, looping forever.
-pub fn encode(dir: &RecordingDir, manifest: &Manifest) -> Result<PathBuf> {
+/// Writes a GIF to `path`, one GIF frame per timeline piece, looping forever, each
+/// picture cut to `crop` when there is one. Returns the number of GIF frames.
+pub fn encode(
+    dir: &RecordingDir,
+    manifest: &Manifest,
+    crop: Option<&Rect>,
+    path: &Path,
+) -> Result<u64> {
     let failed = |e: gif::EncodingError| Error::EncodeFailed(e.to_string());
     let (width, height) = (gif_side(manifest.width)?, gif_side(manifest.height)?);
-    let path = dir.gif_path();
     let mut encoder =
-        Encoder::new(BufWriter::new(File::create(&path)?), width, height, &[]).map_err(failed)?;
+        Encoder::new(BufWriter::new(File::create(path)?), width, height, &[]).map_err(failed)?;
     encoder.set_repeat(Repeat::Infinite).map_err(failed)?;
+    let mut count = 0;
     for piece in timeline(manifest) {
-        let mut rgba = render(dir, &piece)?.into_raw();
+        let mut rgba = render(dir, &piece, crop)?.into_raw();
         let mut frame = Frame::from_rgba_speed(width, height, &mut rgba, 10);
         for delay in delays(piece.duration_ms) {
             frame.delay = delay;
             encoder.write_frame(&frame).map_err(failed)?;
+            count += 1;
         }
     }
-    Ok(path)
+    Ok(count)
 }
 
 /// GIF delays for a picture shown `duration_ms`: hundredths of a second, at least 2
@@ -81,8 +88,21 @@ mod tests {
             button: "left".into(),
         };
         let (dir, manifest) = one_frame("gif-click", vec![click]);
-        assert_eq!(frame_count(&encode(&dir, &manifest).unwrap()), 3);
+        assert_eq!(encode(&dir, &manifest, None, &dir.gif_path()).unwrap(), 3);
+        assert_eq!(frame_count(&dir.gif_path()), 3);
         let (dir, manifest) = one_frame("gif-plain", Vec::new());
-        assert_eq!(frame_count(&encode(&dir, &manifest).unwrap()), 1);
+        assert_eq!(encode(&dir, &manifest, None, &dir.gif_path()).unwrap(), 1);
+        assert_eq!(frame_count(&dir.gif_path()), 1);
+    }
+
+    #[test]
+    fn writes_to_the_path_it_is_given() {
+        let (dir, manifest) = one_frame("gif-elsewhere", Vec::new());
+        let path =
+            std::env::temp_dir().join(format!("recdr-unit-{}-elsewhere.gif", std::process::id()));
+        assert_eq!(encode(&dir, &manifest, None, &path).unwrap(), 1);
+        assert_eq!(frame_count(&path), 1);
+        assert!(!dir.gif_path().exists());
+        let _ = std::fs::remove_file(&path);
     }
 }

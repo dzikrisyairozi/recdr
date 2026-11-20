@@ -1,0 +1,20 @@
+> cargo test --test desktop -- --ignored --test-threads=1
+test on_windows::closing_the_window_ends_the_recording ... ok
+test on_windows::criterion_15_dropped_frames ... FAILED
+test on_windows::detached_recorder_captures_the_desktop ... ok
+test on_windows::minimized_window_is_refused ... ok
+test on_windows::monitor_recording_has_the_monitor_size ... ok
+test on_windows::monitors_lists_index_zero_first ... ok
+test on_windows::region_off_every_monitor_is_out_of_bounds ... ok
+test on_windows::region_recording_is_cropped ... ok
+test on_windows::size_cap_ends_a_recording ... ok
+test on_windows::two_matching_windows_are_ambiguous ... ok
+test on_windows::unknown_window_is_not_found ... ok
+test on_windows::window_recording_is_about_the_window_size ... ok
+test on_windows::windows_prints_a_list ... ok
+thread 'on_windows::criterion_15_dropped_frames' (55836) panicked at tests\desktop.rs:256:9:
+test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.48s
+
+> cargo test --test desktop criterion_15 -- --ignored   (rerun alone; the test's doc asks for a full-screen video on monitor 0, which was not playing)
+test on_windows::criterion_15_dropped_frames ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 31.17s

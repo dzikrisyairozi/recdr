@@ -213,12 +213,14 @@ fn finalize(
     let keyframes = analyze::select::select(&manifest, &diffs, &FrameSelection::Keyframes);
     let keyframes = analyze::select::frame_refs(dir, &keyframes, None)?;
     let gif = if state.options.formats.contains(&Format::Gif) {
-        Some(encode::gif::encode(dir, &manifest)?)
+        encode::gif::encode(dir, &manifest, None, &dir.gif_path())?;
+        Some(dir.gif_path())
     } else {
         None
     };
     let mp4 = if state.options.formats.contains(&Format::Mp4) {
-        Some(encode::mp4(dir, &manifest)?)
+        encode::mp4(dir, &manifest, None, &dir.mp4_path())?;
+        Some(dir.mp4_path())
     } else {
         None
     };

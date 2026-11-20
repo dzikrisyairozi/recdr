@@ -84,6 +84,10 @@ fn rule_2_each_front_end_library_stays_in_its_front_end() {
         ],
         &["src/encode/avf.rs"],
     );
+    forbid(
+        &["eframe", "egui", "rfd::"],
+        &["src/gui/app.rs", "src/gui/overlay.rs", "src/gui/editor.rs"],
+    );
     forbid(&["screencapturekit"], &["src/capture/macos.rs"]);
     forbid(
         &["objc2_core_graphics"],
@@ -134,8 +138,29 @@ fn rule_4_front_ends_import_only_control_request_model_error() {
             "src/mcp.rs" => "cli::",
             _ => continue,
         };
-        for needle in below.iter().chain([&extra]) {
+        for needle in below.iter().chain([&extra, &"gui::", &"export::"]) {
             assert!(!code.contains(needle), "{path} contains {needle:?}");
+        }
+    }
+    // The app is a front end too: below it, it may name only these modules, by path,
+    // so an alias or a grouped import cannot hide another one. Checking what follows
+    // `crate::` leaves `std::time` alone.
+    let gui_may_use = ["control", "error", "model", "request"];
+    for (path, code) in source_files() {
+        if !path.starts_with("src/gui/") {
+            continue;
+        }
+        for (at, _) in code.match_indices("crate::") {
+            let rest = &code[at + "crate::".len()..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            assert!(
+                gui_may_use.contains(&name.as_str()),
+                "{path} uses crate::{}",
+                rest.chars().take(20).collect::<String>()
+            );
         }
     }
 }
@@ -155,6 +180,7 @@ fn rule_6_system_differences_only_in_three_files() {
         "src/capture/mod.rs",
         "src/platform/mod.rs",
         "src/encode/mod.rs",
+        "src/gui/mod.rs",
     ];
     for (path, code) in source_files() {
         if allowed.contains(&path.as_str()) {

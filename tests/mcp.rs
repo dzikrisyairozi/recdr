@@ -6,7 +6,7 @@ use common::{Server, is_error, out_dir, text};
 use serde_json::{Value, json};
 
 #[test]
-fn lists_the_nine_tools() {
+fn lists_the_tools() {
     let mut server = Server::start(Some("moving"));
     let tools = server.request("tools/list", json!({}));
     let mut names: Vec<&str> = tools["tools"]
@@ -19,6 +19,7 @@ fn lists_the_nine_tools() {
     assert_eq!(
         names,
         [
+            "export",
             "get_frames",
             "get_status",
             "list_monitors",
@@ -66,6 +67,36 @@ fn record_then_get_frames() {
     assert_eq!(content.len(), 2);
     assert_eq!(content[0]["type"], "text");
     assert_eq!(content[1]["type"], "image");
+}
+
+#[test]
+fn export_returns_the_result() {
+    let out = out_dir("mcp-export");
+    let file = out.join("cut.gif");
+    let out = out.to_str().unwrap();
+    let mut server = Server::start(Some("moving"));
+    let recorded = server.call(
+        "record",
+        json!({"monitor": 0, "duration": "1s", "out": out}),
+    );
+    let result: Value = serde_json::from_str(&text(&recorded)).unwrap();
+    let id = result["id"].as_str().unwrap();
+
+    let exported = server.call("export", json!({"id": id, "file": file, "out": out}));
+    assert!(!is_error(&exported), "{exported}");
+    let result: Value = serde_json::from_str(&text(&exported)).unwrap();
+    for key in ["path", "width", "height", "duration_ms", "frames"] {
+        assert!(result.get(key).is_some(), "{key} missing from {result}");
+    }
+    assert!(file.is_file());
+
+    let webm = server.call(
+        "export",
+        json!({"id": id, "file": file.with_extension("webm"), "out": out}),
+    );
+    assert!(is_error(&webm), "{webm}");
+    let error: Value = serde_json::from_str(&text(&webm)).unwrap();
+    assert_eq!(error["error"]["code"], "usage", "{webm}");
 }
 
 #[test]

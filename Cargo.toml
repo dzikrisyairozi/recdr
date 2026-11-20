@@ -35,7 +35,15 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
     "Win32_Graphics_Dwm",
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
+rfd = "0.18"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = { version = "11.1", features = ["macos_14_0"] }
@@ -46,9 +54,6 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = ["
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFArray", "CFDictionary", "CFMachPort", "CFNumber", "CFRunLoop", "CFString"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 
 # Dependencies (PNG and GIF encoding) are optimised in debug builds too; unoptimised
 # PNG encoding drops most frames of a 1080p recording, so tests and `cargo run`

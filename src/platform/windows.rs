@@ -11,6 +11,9 @@ use windows::Win32::Foundation::{
     CloseHandle, FILETIME, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, STILL_ACTIVE,
     SetHandleInformation,
 };
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+};
 use windows::Win32::System::Threading::{
     GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
@@ -114,11 +117,54 @@ pub fn spawn_command(command: &[String]) -> Result<Child> {
 
 /// Ends the command and every process it started, then waits for it.
 pub fn kill_tree(child: &mut Child) {
-    // Child::kill would end cmd.exe and leave the real command running.
-    let _ = Command::new("taskkill")
-        .args(["/T", "/F", "/PID", &child.id().to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    // Child::kill alone would end cmd.exe and leave the real command running, and
+    // `taskkill /T` ends the children first: in that gap cmd runs the next part of an
+    // `a & b` line. So the tree is listed, the shell ended, and then the rest.
+    let rest = descendants(child.id());
+    let _ = child.kill();
+    if !rest.is_empty() {
+        let mut taskkill = Command::new("taskkill");
+        taskkill.arg("/F");
+        for pid in rest {
+            taskkill.args(["/PID", &pid.to_string()]);
+        }
+        let _ = taskkill
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
     let _ = child.wait();
+}
+
+/// The processes `pid` started, and the ones those started, from one snapshot.
+fn descendants(pid: u32) -> Vec<u32> {
+    // SAFETY: a process snapshot; the handle is closed below.
+    let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+        return Vec::new();
+    };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut pairs = Vec::new();
+    // SAFETY: `entry` is a PROCESSENTRY32W with dwSize set, as both calls require.
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok();
+    while more {
+        pairs.push((entry.th32ProcessID, entry.th32ParentProcessID));
+        // SAFETY: as above.
+        more = unsafe { Process32NextW(snapshot, &mut entry) }.is_ok();
+    }
+    // SAFETY: the snapshot handle is ours and not used after this.
+    let _ = unsafe { CloseHandle(snapshot) };
+    let mut tree = vec![pid];
+    let mut next = 0;
+    while let Some(&parent) = tree.get(next) {
+        for &(child, of) in &pairs {
+            if of == parent && !tree.contains(&child) {
+                tree.push(child);
+            }
+        }
+        next += 1;
+    }
+    tree.split_off(1)
 }

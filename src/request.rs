@@ -7,7 +7,8 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Endpoint, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery, TabTarget, Target,
+    Endpoint, ExportOptions, FakeKind, Format, FrameSelection, RecordOptions, Rect, TabQuery,
+    TabTarget, Target,
 };
 use crate::time::parse_time;
 
@@ -20,7 +21,7 @@ pub const FAKE_SOURCE_ENV: &str = "RECDR_FAKE_SOURCE";
 
 /// What a user asked for, before validation. Every field is optional so the CLI
 /// and the MCP server can fill it from their own input shapes.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct RecordRequest {
     pub window_id: Option<u64>,
@@ -37,6 +38,7 @@ pub struct RecordRequest {
     pub fps: Option<u32>,
     pub max_duration: Option<String>,
     pub max_size: Option<String>,
+    /// gif, mp4, "gif,mp4" or none; default gif
     pub format: Option<String>,
     pub no_cursor: bool,
     pub no_click_highlight: bool,
@@ -117,6 +119,46 @@ impl RecordRequest {
     }
 }
 
+/// What a user asked `export` for, before validation. Also the MCP tool's arguments.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+pub struct ExportRequest {
+    /// Recording id
+    pub id: String,
+    /// Where to write; the extension picks the format, .gif or .mp4
+    pub file: PathBuf,
+    /// Start of the part to keep, such as "1500ms" or "2s"; default the start of the recording
+    pub from: Option<String>,
+    /// End of the part to keep; default the end of the recording
+    pub until: Option<String>,
+    /// Rectangle to keep, "x,y,width,height" in pixels; default the whole picture
+    pub crop: Option<String>,
+    /// Output root; default .recdr in the working directory
+    pub out: Option<PathBuf>,
+}
+
+impl ExportRequest {
+    pub fn into_options(self) -> Result<ExportOptions> {
+        let extension = self
+            .file
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase());
+        let format = match extension.as_deref() {
+            Some("gif") => Format::Gif,
+            Some("mp4") => Format::Mp4,
+            _ => return Err(usage("--file must end in .gif or .mp4")),
+        };
+        Ok(ExportOptions {
+            id: self.id,
+            out: resolve_out(self.out)?,
+            file: std::path::absolute(self.file)?,
+            format,
+            from_ms: self.from.as_deref().map(parse_time).transpose()?,
+            until_ms: self.until.as_deref().map(parse_time).transpose()?,
+            crop: self.crop.as_deref().map(parse_region).transpose()?,
+        })
+    }
+}
+
 fn usage(message: &str) -> Error {
     Error::Usage(message.to_owned())
 }
@@ -177,14 +219,19 @@ pub fn parse_region(text: &str) -> Result<Rect> {
     Ok(rect)
 }
 
-/// `gif`, `mp4` or both, comma separated. A repeated format counts once.
+/// `gif`, `mp4` or both, comma separated, or `none` alone. A repeated format counts once.
 pub fn parse_formats(text: &str) -> Result<Vec<Format>> {
+    let parts: Vec<&str> = text.split(',').map(str::trim).collect();
+    if parts == ["none"] {
+        return Ok(Vec::new());
+    }
     let mut formats = Vec::new();
-    for part in text.split(',').map(str::trim) {
+    for part in parts {
         let format = match part {
             "gif" => Format::Gif,
             "mp4" => Format::Mp4,
-            other => return Err(Error::Usage(format!("{other:?} is not gif or mp4"))),
+            "none" => return Err(usage("none cannot be combined with gif or mp4")),
+            other => return Err(Error::Usage(format!("{other:?} is not gif, mp4 or none"))),
         };
         if !formats.contains(&format) {
             formats.push(format);
@@ -429,7 +476,44 @@ mod tests {
             [Format::Gif, Format::Mp4]
         );
         assert_eq!(parse_formats("gif,gif").unwrap(), [Format::Gif]);
-        assert_eq!(parse_formats("webm").unwrap_err().code(), "usage");
+        let webm = parse_formats("webm").unwrap_err();
+        assert_eq!(webm.code(), "usage");
+        assert!(webm.to_string().contains("none"), "{webm}");
+    }
+
+    fn export_to(file: &str) -> Result<ExportOptions> {
+        ExportRequest {
+            id: "x".into(),
+            file: file.into(),
+            from: None,
+            until: None,
+            crop: None,
+            out: None,
+        }
+        .into_options()
+    }
+
+    #[test]
+    fn export_extension_picks_the_format() {
+        assert_eq!(export_to("a.gif").unwrap().format, Format::Gif);
+        assert_eq!(export_to("a.GIF").unwrap().format, Format::Gif);
+        assert_eq!(export_to("dir/a.mp4").unwrap().format, Format::Mp4);
+        assert!(export_to("a.gif").unwrap().file.is_absolute());
+        for file in ["a.webm", "a", "gif"] {
+            let error = export_to(file).unwrap_err();
+            assert_eq!(error.code(), "usage", "{file}");
+            assert_eq!(error.to_string(), "--file must end in .gif or .mp4");
+        }
+    }
+
+    #[test]
+    fn parse_formats_none_alone_is_no_format() {
+        assert_eq!(parse_formats("none").unwrap(), []);
+        for text in ["none,gif", "gif,none", "mp4,none"] {
+            let error = parse_formats(text).unwrap_err();
+            assert_eq!(error.code(), "usage", "{text}");
+            assert_eq!(error.to_string(), "none cannot be combined with gif or mp4");
+        }
     }
 
     #[test]

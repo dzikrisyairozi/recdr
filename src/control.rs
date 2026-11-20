@@ -9,10 +9,11 @@ use crate::analyze;
 use crate::capture;
 use crate::encode;
 use crate::error::{Error, Result};
+use crate::export;
 use crate::model::{
-    Endpoint, Format, FrameList, FrameSelection, MarkAck, MonitorList, RecordOptions,
-    RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList, Target,
-    WindowList,
+    Endpoint, ExportOptions, ExportResult, Format, FrameList, FrameSelection, MarkAck, MonitorList,
+    RecordOptions, RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList,
+    Target, WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -23,6 +24,11 @@ const POLL: Duration = Duration::from_millis(50);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 /// A tab recorder connects to the browser first, which may take its 30 second reply limit.
 const TAB_START_TIMEOUT: Duration = Duration::from_secs(40);
+
+/// Writes a GIF or an MP4 from part of a finished recording.
+pub fn export(options: ExportOptions) -> Result<ExportResult> {
+    export::run(&RecordingDir::open(&options.out, &options.id)?, &options)
+}
 
 pub fn list_windows() -> Result<WindowList> {
     Ok(WindowList {
