@@ -38,7 +38,7 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
   - Acceptance: the Linux branch prints a "not run" note
   - Verify: Linux CI log
   - Files: src/encode/mod.rs
-- [ ] Task 7: Remove `src/lib.rs` from the `cfg` allow list
+- [x] Task 7: Remove `src/lib.rs` from the `cfg` allow list
   - Finding: Suggestion — tests/layers.rs:157
   - Acceptance: the list matches the files that hold `cfg`
   - Verify: `rtk proxy cargo test --test layers`

@@ -150,11 +150,10 @@ fn rule_5_model_has_no_functions() {
 }
 
 #[test]
-fn rule_6_system_differences_only_in_four_files() {
+fn rule_6_system_differences_only_in_three_files() {
     let allowed = [
         "src/capture/mod.rs",
         "src/platform/mod.rs",
-        "src/lib.rs",
         "src/encode/mod.rs",
     ];
     for (path, code) in source_files() {
