@@ -67,7 +67,7 @@ pub fn check_mp4() -> Result<()> {
     let path = std::env::temp_dir().join(format!("recdr-check-{}-{n}.mp4", std::process::id()));
     let black = RgbaImage::from_pixel(160, 120, image::Rgba([0, 0, 0, 255]));
     let trial = Writer::create(&path, 160, 120, 1, 1_000_000).and_then(|mut writer| {
-        let pushed = writer.push(0, &black);
+        let pushed = writer.push(0, &black, true);
         let finished = writer.finish();
         pushed.and(finished)
     });
@@ -95,7 +95,9 @@ fn write(dir: &RecordingDir, manifest: &Manifest, path: &Path) -> Result<()> {
     let (width, height) = video_size(manifest.width, manifest.height);
     let fps = manifest.fps.max(1);
     let mut writer = Writer::create(path, width, height, fps, bit_rate(width, height, fps))?;
-    let pushed = video_frames(dir, manifest, |k, image| writer.push(k, image));
+    let pushed = video_frames(dir, manifest, |k, image, changed| {
+        writer.push(k, image, changed)
+    });
     // Always finished, so the encoder lets go of the file before `mp4` removes it.
     let finished = writer.finish();
     pushed.and(finished)
@@ -169,7 +171,7 @@ pub fn render(dir: &RecordingDir, frame: &OutFrame) -> Result<RgbaImage> {
 fn video_frames(
     dir: &RecordingDir,
     manifest: &Manifest,
-    mut each: impl FnMut(u64, &RgbaImage) -> Result<()>,
+    mut each: impl FnMut(u64, &RgbaImage, bool) -> Result<()>,
 ) -> Result<u64> {
     let pieces = timeline(manifest);
     if pieces.is_empty() {
@@ -181,10 +183,13 @@ fn video_frames(
     for k in 0..frames {
         let t_ms = k * 1000 / fps;
         let at = pieces.iter().rposition(|p| p.t_ms <= t_ms).unwrap_or(0);
-        if shown.as_ref().is_none_or(|(i, _)| *i != at) {
+        let changed = shown.as_ref().is_none_or(|(i, _)| *i != at);
+        if changed {
             shown = Some((at, padded(render(dir, &pieces[at])?)));
         }
-        each(k, &shown.as_ref().expect("set above").1)?;
+        if let Some((_, image)) = &shown {
+            each(k, image, changed)?;
+        }
     }
     Ok(frames)
 }
@@ -310,7 +315,7 @@ mod tests {
 
     fn calls(dir: &RecordingDir, manifest: &Manifest) -> Vec<u64> {
         let mut seen = Vec::new();
-        let count = video_frames(dir, manifest, |k, _| {
+        let count = video_frames(dir, manifest, |k, _, _| {
             seen.push(k);
             Ok(())
         })
@@ -349,12 +354,16 @@ mod tests {
         assert_eq!(manifest.frames.len(), 2);
 
         let mut shades = Vec::new();
-        video_frames(&dir, &manifest, |_, image| {
+        let mut changes = Vec::new();
+        video_frames(&dir, &manifest, |_, image, changed| {
             shades.push(image.get_pixel(0, 0)[0]);
+            changes.push(changed);
             Ok(())
         })
         .unwrap();
         assert_eq!(shades, [0, 0, 0, 255, 255]);
+        // A writer converts the picture only when it is a new one.
+        assert_eq!(changes, [true, false, false, true, false]);
     }
 
     #[test]

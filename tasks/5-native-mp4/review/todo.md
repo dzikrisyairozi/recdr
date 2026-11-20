@@ -18,12 +18,12 @@ Plan: `tasks/5-native-mp4/review/plan.md`. PR: https://github.com/dzikrisyairozi
 
 ## Phase 2: Suggestions
 
-- [ ] Task 3: Report the macOS encoder's own error
+- [x] Task 3: Report the macOS encoder's own error
   - Finding: Suggestion — src/encode/avf.rs:130
   - Acceptance: a failed writer returns its `NSError` text, not a 10 s timeout
   - Verify: clippy for `aarch64-apple-darwin`; macOS tests
   - Files: src/encode/avf.rs
-- [ ] Task 4: Reuse the pixel buffer for an unchanged picture
+- [x] Task 4: Reuse the pixel buffer for an unchanged picture
   - Finding: Suggestion — src/encode/avf.rs:137
   - Acceptance: one `CVPixelBuffer` per changed picture
   - Verify: macOS MP4 tests

@@ -82,8 +82,9 @@ impl Writer {
         })
     }
 
-    /// Adds video frame `k`. Frames arrive in order, starting at 0.
-    pub fn push(&mut self, _k: u64, image: &RgbaImage) -> Result<()> {
+    /// Adds video frame `k`. Frames arrive in order, starting at 0. ffmpeg takes every
+    /// frame's bytes, so `changed` saves nothing here.
+    pub fn push(&mut self, _k: u64, image: &RgbaImage, _changed: bool) -> Result<()> {
         if !self.broken && self.stdin.write_all(image.as_raw()).is_err() {
             self.broken = true;
         }
