@@ -374,6 +374,7 @@ mod tests {
             id: id.into(),
             status: Status::Starting,
             pid: 0,
+            pid_started: 0,
             started_at_unix_ms: 5,
             width: 0,
             height: 0,

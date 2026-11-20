@@ -24,7 +24,7 @@ Plan: `tasks/1-recdr/review/plan.md`. PR: https://github.com/dzikrisyairozi/recd
   - Acceptance: after a capture error in `record -- <cmd>`, the child process is gone
   - Verify: `rtk proxy cargo test --test record`
   - Files: src/recorder.rs, tests/record.rs
-- [ ] Task 5: Tell a recorder from a reused process id
+- [x] Task 5: Tell a recorder from a reused process id
   - Finding: Important — src/platform.rs:33
   - Acceptance: a state whose pid belongs to another process reports `crashed`, and `stop` does not wait
   - Verify: unit test with a wrong creation time; `rtk proxy cargo test`

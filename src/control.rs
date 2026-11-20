@@ -69,7 +69,7 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
                 height: state.height,
             });
         }
-        if !platform::process_alive(pid) || begun.elapsed() >= START_TIMEOUT {
+        if platform::process_started(pid).is_none() || begun.elapsed() >= START_TIMEOUT {
             return Err(Error::RecorderStartFailed(dir.last_log_line()));
         }
         thread::sleep(POLL);
@@ -148,7 +148,9 @@ fn derived_status(dir: &RecordingDir) -> Result<Status> {
     let state = dir.read_state()?;
     let young = time::now_unix_ms().saturating_sub(state.started_at_unix_ms)
         < START_TIMEOUT.as_millis() as u64;
-    if (state.status == Status::Starting && young) || platform::process_alive(state.pid) {
+    if (state.status == Status::Starting && young)
+        || platform::process_started(state.pid).is_some_and(|t| t == state.pid_started)
+    {
         Ok(Status::Recording)
     } else {
         Ok(Status::Crashed)
@@ -213,6 +215,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         id: dir.id().to_owned(),
         status: Status::Starting,
         pid: 0,
+        pid_started: 0,
         started_at_unix_ms: now,
         width: 0,
         height: 0,
@@ -220,4 +223,37 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         options,
     })?;
     Ok(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reused_process_id_is_not_the_recorder() {
+        let options = crate::model::RecordOptions {
+            target: crate::model::Target::Fake(crate::model::FakeKind::Static),
+            fps: 15,
+            max_duration_ms: 10_000,
+            max_size_bytes: 1_000_000,
+            formats: Vec::new(),
+            cursor: true,
+            clicks: false,
+            out: PathBuf::new(),
+            duration_ms: None,
+            command: None,
+        };
+        let dir = crate::recorder::prepared(options, "reused-pid");
+        let mut state = dir.read_state().unwrap();
+        // This test's own process is alive, but it is not the process that wrote the state.
+        state.status = Status::Recording;
+        state.pid = std::process::id();
+        state.pid_started = 1;
+        dir.write_state(&state).unwrap();
+        assert_eq!(derived_status(&dir).unwrap(), Status::Crashed);
+
+        state.pid_started = platform::process_started(std::process::id()).unwrap();
+        dir.write_state(&state).unwrap();
+        assert_eq!(derived_status(&dir).unwrap(), Status::Recording);
+    }
 }

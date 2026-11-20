@@ -149,6 +149,10 @@ pub struct State {
     pub id: String,
     pub status: Status,
     pub pid: u32,
+    /// When the process `pid` was started (`platform::process_started`), so a later
+    /// process given the same id is not taken for the recorder.
+    #[serde(default)]
+    pub pid_started: u64,
     pub started_at_unix_ms: u64,
     pub width: u32,
     pub height: u32,

@@ -12,6 +12,7 @@ use crate::model::{
     CaptureEvent, Format, FrameSelection, Manifest, Mark, RecordingResult, ResolvedKind, State,
     Status, StopReason,
 };
+use crate::platform;
 use crate::store::RecordingDir;
 use crate::time;
 
@@ -72,6 +73,7 @@ fn capture(dir: &RecordingDir, state: &mut State) -> Result<(Manifest, Option<i3
     state.started_at_unix_ms = time::now_unix_ms();
     state.status = Status::Recording;
     state.pid = std::process::id();
+    state.pid_started = platform::process_started(state.pid).unwrap_or(0);
     state.width = first.width;
     state.height = first.height;
     dir.write_state(state)?;
@@ -231,6 +233,7 @@ pub(crate) fn prepared(options: crate::model::RecordOptions, name: &str) -> Reco
         id: dir.id().to_owned(),
         status: Status::Starting,
         pid: 0,
+        pid_started: 0,
         started_at_unix_ms: 0,
         width: 0,
         height: 0,
