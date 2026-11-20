@@ -244,12 +244,11 @@ impl CaptureSource for CdpSource {
             if let Some(click) = self.clicks.pop_front() {
                 return Ok(Some(click));
             }
-            if let Some(frame) = self.held.front()
-                && !self.holding
+            if !self.holding
                 && Instant::now() >= self.release_at
+                && let Some(frame) = self.held.pop_front()
             {
                 self.frame_size = Some((frame.width, frame.height));
-                let frame = self.held.pop_front().expect("a held frame");
                 // Every frame received has now been handed out. Acking all of them
                 // matters: the browser stops sending while three frames are unacked.
                 if self.held.is_empty() && self.decoding == 0 {

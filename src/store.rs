@@ -4,7 +4,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -300,7 +300,11 @@ impl WriterThread {
         if self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
             return self.join().map(|_| ());
         }
-        let mut mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+        let mut mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if mailbox.waiting.replace((frame, t_ms)).is_some() {
             mailbox.skipped += 1;
         }
@@ -312,7 +316,11 @@ impl WriterThread {
     /// anyway: a browser sends the next frame only after recdr acknowledges, so taking
     /// no frame from it until this is true lowers the frame rate instead of dropping one.
     pub fn is_free(&self) -> bool {
-        let mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+        let mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         // A writer that ended on an error never takes the frame; `push` reports it.
         mailbox.waiting.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished)
     }
@@ -331,13 +339,17 @@ impl WriterThread {
             .shared
             .mailbox
             .lock()
-            .expect("frame writer lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .skipped;
         Ok((frames.frames, skipped))
     }
 
     fn close(&self) {
-        self.shared.mailbox.lock().expect("frame writer lock").done = true;
+        self.shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .done = true;
         self.shared.ready.notify_one();
     }
 
@@ -361,7 +373,10 @@ impl Drop for WriterThread {
 fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter> {
     loop {
         let next = {
-            let mut mailbox = shared.mailbox.lock().expect("frame writer lock");
+            let mut mailbox = shared
+                .mailbox
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             loop {
                 // The waiting frame is taken before `done` is looked at, so `finish`
                 // stores the last frame.
@@ -371,7 +386,10 @@ fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter>
                 if mailbox.done {
                     break None;
                 }
-                mailbox = shared.ready.wait(mailbox).expect("frame writer lock");
+                mailbox = shared
+                    .ready
+                    .wait(mailbox)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
         };
         let Some((frame, t_ms)) = next else {
