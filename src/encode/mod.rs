@@ -589,12 +589,15 @@ mod tests {
         out
     }
 
-    /// A track: its handler, an mdhd of `duration` at 1000 units a second, and a sample
-    /// entry named `codec` of `width` by 90.
+    /// A track: its handler, a tkhd of `duration` in the movie's 1000 units a second,
+    /// an mdhd 133 units longer, as libx264's frame delay makes it before the edit
+    /// list, and a sample entry named `codec` of `width` by 90.
     fn trak(handler: &[u8; 4], codec: &[u8; 4], width: u16, duration: u32) -> Vec<u8> {
+        let mut tkhd = vec![0u8; 20];
+        tkhd.extend_from_slice(&duration.to_be_bytes());
         let mut mdhd = vec![0u8; 12];
         mdhd.extend_from_slice(&1000u32.to_be_bytes());
-        mdhd.extend_from_slice(&duration.to_be_bytes());
+        mdhd.extend_from_slice(&(duration + 133).to_be_bytes());
         let mut hdlr = vec![0u8; 8];
         hdlr.extend_from_slice(handler);
         let mut entry = vec![0u8; 4];
@@ -607,7 +610,8 @@ mod tests {
         let stbl = mp4_box(b"stbl", &mp4_box(b"stsd", &stsd));
         let minf = mp4_box(b"minf", &stbl);
         let mdia = [mp4_box(b"mdhd", &mdhd), mp4_box(b"hdlr", &hdlr), minf].concat();
-        mp4_box(b"trak", &mp4_box(b"mdia", &mdia))
+        let trak = [mp4_box(b"tkhd", &tkhd), mp4_box(b"mdia", &mdia)].concat();
+        mp4_box(b"trak", &trak)
     }
 
     #[test]

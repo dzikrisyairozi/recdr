@@ -44,11 +44,19 @@ fn parse(bytes: &[u8]) -> Option<Mp4Facts> {
         else {
             continue;
         };
-        // The track's own length, in its mdhd; mvhd's is the longest track's.
-        let mdhd = *boxes(mdia, b"mdhd").first()?;
-        let (scale, duration) = match *mdhd.first()? {
-            0 => (u32_at(mdhd, 12)?, u64::from(u32_at(mdhd, 16)?)),
-            1 => (u32_at(mdhd, 20)?, u64_at(mdhd, 24)?),
+        // The track's own length is in its tkhd, in mvhd's time scale, after its edit
+        // list. mdhd's length is before the edit list: with libx264's frame delay it
+        // runs a frame or two long. mvhd's length is the longest track's.
+        let mvhd = *boxes(moov, b"mvhd").first()?;
+        let scale = match *mvhd.first()? {
+            0 => u32_at(mvhd, 12)?,
+            1 => u32_at(mvhd, 20)?,
+            _ => return None,
+        };
+        let tkhd = *boxes(trak, b"tkhd").first()?;
+        let duration = match *tkhd.first()? {
+            0 => u64::from(u32_at(tkhd, 20)?),
+            1 => u64_at(tkhd, 28)?,
             _ => return None,
         };
         if scale == 0 {
