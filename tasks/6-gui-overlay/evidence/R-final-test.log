@@ -1,10 +1,10 @@
 > cargo fmt --check
 exit: 0
 > cargo clippy --all-targets -- -D warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.29s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.46s
 > cargo test 
      Running unittests src\lib.rs (target\debug\deps\recdr-83cce70f31b5a29f.exe)
-test result: ok. 130 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 8.47s
+test result: ok. 130 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 8.54s
      Running unittests src\main.rs (target\debug\deps\recdr-bac276c7a1576603.exe)
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
      Running tests\browser.rs (target\debug\deps\browser-c7669d8a68279137.exe)
@@ -12,22 +12,22 @@ test result: ok. 0 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; fin
      Running tests\cli.rs (target\debug\deps\cli-06b8d8061fa168b5.exe)
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
      Running tests\control.rs (target\debug\deps\control-3c865aee56eb7af4.exe)
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.49s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.42s
      Running tests\desktop.rs (target\debug\deps\desktop-79326461014c7a28.exe)
 test result: ok. 0 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 0.00s
      Running tests\export.rs (target\debug\deps\export-fcca781d71902a68.exe)
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.55s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.41s
      Running tests\frames.rs (target\debug\deps\frames-7f11607bc249ab87.exe)
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.20s
      Running tests\gui.rs (target\debug\deps\gui-c6dc9c960d49994c.exe)
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
      Running tests\layers.rs (target\debug\deps\layers-64ad5fd14fcc4b97.exe)
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
      Running tests\mcp.rs (target\debug\deps\mcp-3ed7a7adc1437807.exe)
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
      Running tests\record.rs (target\debug\deps\record-c479fc7af647800a.exe)
 test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.01s
      Running tests\tabs.rs (target\debug\deps\tabs-2470ffdb197431e3.exe)
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.38s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.42s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 exit: 0
