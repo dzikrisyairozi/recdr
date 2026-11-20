@@ -4,7 +4,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -72,9 +72,14 @@ impl RecordingDir {
         }
     }
 
+    /// The recording `id` under `out`. An id that is not one plain name (`..`, a path,
+    /// an absolute path) is not found, so nothing outside `out` is opened.
     pub fn open(out: &Path, id: &str) -> Result<Self> {
+        let mut parts = Path::new(id).components();
+        let plain =
+            matches!(parts.next(), Some(std::path::Component::Normal(_))) && parts.next().is_none();
         let path = out.join(id);
-        if !path.join(STATE).is_file() {
+        if !plain || !path.join(STATE).is_file() {
             return Err(Error::RecordingNotFound(id.to_owned()));
         }
         Ok(Self { path })
@@ -295,7 +300,11 @@ impl WriterThread {
         if self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
             return self.join().map(|_| ());
         }
-        let mut mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+        let mut mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if mailbox.waiting.replace((frame, t_ms)).is_some() {
             mailbox.skipped += 1;
         }
@@ -307,7 +316,11 @@ impl WriterThread {
     /// anyway: a browser sends the next frame only after recdr acknowledges, so taking
     /// no frame from it until this is true lowers the frame rate instead of dropping one.
     pub fn is_free(&self) -> bool {
-        let mailbox = self.shared.mailbox.lock().expect("frame writer lock");
+        let mailbox = self
+            .shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         // A writer that ended on an error never takes the frame; `push` reports it.
         mailbox.waiting.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished)
     }
@@ -326,13 +339,17 @@ impl WriterThread {
             .shared
             .mailbox
             .lock()
-            .expect("frame writer lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .skipped;
         Ok((frames.frames, skipped))
     }
 
     fn close(&self) {
-        self.shared.mailbox.lock().expect("frame writer lock").done = true;
+        self.shared
+            .mailbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .done = true;
         self.shared.ready.notify_one();
     }
 
@@ -356,7 +373,10 @@ impl Drop for WriterThread {
 fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter> {
     loop {
         let next = {
-            let mut mailbox = shared.mailbox.lock().expect("frame writer lock");
+            let mut mailbox = shared
+                .mailbox
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             loop {
                 // The waiting frame is taken before `done` is looked at, so `finish`
                 // stores the last frame.
@@ -366,7 +386,10 @@ fn store_frames(mut frames: FrameWriter, shared: &Shared) -> Result<FrameWriter>
                 if mailbox.done {
                     break None;
                 }
-                mailbox = shared.ready.wait(mailbox).expect("frame writer lock");
+                mailbox = shared
+                    .ready
+                    .wait(mailbox)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
         };
         let Some((frame, t_ms)) = next else {
@@ -483,6 +506,32 @@ pub fn frame_at(frames: &[FrameEntry], t_ms: u64) -> Option<&FrameEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_id_that_is_a_path_is_not_found() {
+        let root =
+            std::env::temp_dir().join(format!("recdr-unit-{}-id-is-path", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // open only looks for the file, so a plain write is enough.
+        let inside = RecordingDir::create(&root.join("out"), 0).unwrap();
+        fs::write(inside.path().join(STATE), "{}").unwrap();
+        let outside = RecordingDir::create(&root, 0).unwrap();
+        fs::write(outside.path().join(STATE), "{}").unwrap();
+        let out = root.join("out");
+        assert!(RecordingDir::open(&out, inside.id()).is_ok());
+        for id in [
+            format!("../{}", outside.id()),
+            outside.path().display().to_string(),
+        ] {
+            assert!(
+                matches!(
+                    RecordingDir::open(&out, &id),
+                    Err(Error::RecordingNotFound(_))
+                ),
+                "{id}"
+            );
+        }
+    }
     use crate::model::{FakeKind, RecordOptions, ResolvedKind, ResolvedTarget, Status, Target};
 
     fn temp(name: &str) -> PathBuf {
@@ -504,6 +553,7 @@ mod tests {
             id: id.into(),
             status: Status::Starting,
             pid: 0,
+            pid_started: 0,
             started_at_unix_ms: 5,
             width: 0,
             height: 0,

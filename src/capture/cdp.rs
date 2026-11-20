@@ -35,6 +35,12 @@ const MAX_MESSAGE_BYTES: usize = 256 << 20;
 const MAX_HTTP_BYTES: usize = 1 << 20;
 /// The page calls this to report a mouse press.
 const BINDING: &str = "__recdrClick";
+/// Presses closer together than this are one press repeated, or a page calling the
+/// binding in a loop; the first is kept.
+const MIN_CLICK_GAP_MS: u64 = 20;
+/// Frames decoding or decoded and not yet handed out. A browser that respects acks
+/// never has more than three.
+const MAX_WAITING: usize = 4;
 
 /// Runs in the recorded tab. Reports top-level mouse presses through the binding;
 /// does nothing in iframes, or once the binding is gone.
@@ -78,6 +84,15 @@ pub struct CdpSource {
     /// Size of the latest frame handed out, for scaling clicks.
     frame_size: Option<(u32, u32)>,
     clicks: VecDeque<CaptureEvent>,
+    /// When the last press was kept. Presses closer than `MIN_CLICK_GAP_MS` are dropped,
+    /// so a page calling the binding in a loop cannot flood the recording.
+    last_click_ms: u64,
+    /// When each frame decoding or held arrived, oldest first, like `held`.
+    arrivals: VecDeque<Instant>,
+    /// See `CaptureSource::frame_age`.
+    last_age: Duration,
+    /// Frames not decoded because `MAX_WAITING` were already waiting.
+    dropped: u64,
     /// Identifier of the new-document script, when clicks are reported.
     click_script: Option<String>,
 }
@@ -121,6 +136,10 @@ impl CdpSource {
             release_at: Instant::now(),
             holding: false,
             frame_size: None,
+            last_click_ms: 0,
+            dropped: 0,
+            arrivals: VecDeque::new(),
+            last_age: Duration::ZERO,
             clicks: VecDeque::new(),
             click_script: None,
         };
@@ -167,11 +186,23 @@ impl CdpSource {
             return Ok(None);
         }
         if method == "Page.screencastFrame" {
-            let data = incoming.params["data"].take();
-            self.to_decoder
-                .send(data.as_str().unwrap_or_default().to_owned())
-                .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
-            self.decoding += 1;
+            // Taken, not copied: a 1080p PNG is several megabytes of base64.
+            let data = match incoming.params["data"].take() {
+                Value::String(data) => data,
+                _ => String::new(),
+            };
+            // A browser sends at most three frames unacknowledged, but a page that reloads
+            // itself restarts the count each time, and an endpoint can ignore acks. Past
+            // MAX_WAITING frames are counted as dropped; the id is still acknowledged.
+            if self.decoding + self.held.len() >= MAX_WAITING {
+                self.dropped += 1;
+            } else {
+                self.to_decoder
+                    .send(data)
+                    .map_err(|_| Error::CaptureFailed("the PNG decoder stopped".into()))?;
+                self.decoding += 1;
+                self.arrivals.push_back(Instant::now());
+            }
             if let Some(id) = incoming.params["sessionId"].as_i64() {
                 self.unacked.push(id);
             }
@@ -193,8 +224,13 @@ impl CdpSource {
                 frame,
             )
         {
+            let unix_ms = time::now_unix_ms();
+            if unix_ms < self.last_click_ms + MIN_CLICK_GAP_MS {
+                return Ok(None);
+            }
+            self.last_click_ms = unix_ms;
             self.clicks.push_back(CaptureEvent::Click {
-                unix_ms: time::now_unix_ms(),
+                unix_ms,
                 x,
                 y,
                 button,
@@ -244,12 +280,15 @@ impl CaptureSource for CdpSource {
             if let Some(click) = self.clicks.pop_front() {
                 return Ok(Some(click));
             }
-            if let Some(frame) = self.held.front()
-                && !self.holding
+            if !self.holding
                 && Instant::now() >= self.release_at
+                && let Some(frame) = self.held.pop_front()
             {
                 self.frame_size = Some((frame.width, frame.height));
-                let frame = self.held.pop_front().expect("a held frame");
+                self.last_age = self
+                    .arrivals
+                    .pop_front()
+                    .map_or(Duration::ZERO, |t| t.elapsed());
                 // Every frame received has now been handed out. Acking all of them
                 // matters: the browser stops sending while three frames are unacked.
                 if self.held.is_empty() && self.decoding == 0 {
@@ -272,7 +311,11 @@ impl CaptureSource for CdpSource {
     }
 
     fn dropped(&self) -> u64 {
-        0
+        self.dropped
+    }
+
+    fn frame_age(&self) -> Duration {
+        self.last_age
     }
 
     fn paced(&self) -> bool {
@@ -344,9 +387,12 @@ fn click(payload: &str, frame: (u32, u32)) -> Option<(i32, i32, &'static str)> {
         2 => "right",
         _ => return None,
     };
-    let x = (number("x")? * f64::from(frame.0) / w).round() as i32;
-    let y = (number("y")? * f64::from(frame.1) / h).round() as i32;
-    Some((x, y, button))
+    // The page can call the binding itself, so a press outside the picture is dropped,
+    // as the desktop sources drop one outside the captured area.
+    let x = (number("x")? * f64::from(frame.0) / w).round();
+    let y = (number("y")? * f64::from(frame.1) / h).round();
+    let inside = (0.0..f64::from(frame.0)).contains(&x) && (0.0..f64::from(frame.1)).contains(&y);
+    inside.then_some((x as i32, y as i32, button))
 }
 
 /// A base64 PNG to an RGBA frame.
@@ -462,9 +508,17 @@ fn version_url(authority: &str) -> Result<String> {
             "{authority} did not answer GET /json/version as a CDP server"
         ))
     };
-    stream
-        .set_read_timeout(Some(CONNECT_TIMEOUT))
-        .map_err(|_| not_cdp())?;
+    // One limit for the whole reply: a per-read timeout lets an endpoint that sends a
+    // byte every few seconds keep recdr waiting until the size limit.
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    let read = |stream: &mut TcpStream, chunk: &mut [u8]| {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(not_cdp());
+        }
+        stream.set_read_timeout(Some(left)).map_err(|_| not_cdp())?;
+        stream.read(chunk).map_err(|_| not_cdp())
+    };
     write!(
         stream,
         "GET /json/version HTTP/1.1\r\nHost: {authority}\r\n\r\n"
@@ -477,7 +531,7 @@ fn version_url(authority: &str) -> Result<String> {
         if let Some(at) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
             break at;
         }
-        let read = stream.read(&mut chunk).map_err(|_| not_cdp())?;
+        let read = read(&mut stream, &mut chunk)?;
         if read == 0 || bytes.len() > MAX_HTTP_BYTES {
             return Err(not_cdp());
         }
@@ -490,7 +544,7 @@ fn version_url(authority: &str) -> Result<String> {
     }
     let mut body = bytes.split_off(head_end + 4);
     while body.len() < length {
-        let read = stream.read(&mut chunk).map_err(|_| not_cdp())?;
+        let read = read(&mut stream, &mut chunk)?;
         if read == 0 {
             return Err(not_cdp());
         }
@@ -505,7 +559,18 @@ fn version_url(authority: &str) -> Result<String> {
 
 fn websocket_url(endpoint: &Endpoint) -> Result<String> {
     match endpoint {
-        Endpoint::Port(port) => version_url(&format!("127.0.0.1:{port}")),
+        Endpoint::Port(port) => {
+            // A bare port means this machine. A reply naming another host would send the
+            // connection, and every frame, off it.
+            let url = version_url(&format!("127.0.0.1:{port}"))?;
+            let host = authority(&url).and_then(|a| a.rsplit_once(':').map(|(h, _)| h.to_owned()));
+            match host.as_deref() {
+                Some("127.0.0.1" | "localhost" | "[::1]") => Ok(url),
+                _ => Err(Error::CdpConnectFailed(format!(
+                    "port {port} named {url}, which is not on this machine"
+                ))),
+            }
+        }
         Endpoint::Http(authority) => version_url(authority),
         Endpoint::Ws(url) => Ok(url.clone()),
         Endpoint::Chrome => {
@@ -715,6 +780,55 @@ mod tests {
         assert_eq!(click(&press(3, 1264), frame), None);
         assert_eq!(click(&press(0, 0), frame), None);
         assert_eq!(click("not json", frame), None);
+        let at = |x: &str, y: &str| format!(r#"{{"x":{x},"y":{y},"button":0,"w":1264,"h":625}}"#);
+        assert_eq!(click(&at("1e300", "5"), frame), None);
+        assert_eq!(click(&at("-1", "5"), frame), None);
+        assert_eq!(click(&at("5", "625"), frame), None);
+        assert_eq!(click(&at("1263", "624"), frame), Some((2526, 1248, "left")));
+    }
+
+    #[test]
+    fn a_port_whose_reply_names_another_host_is_refused() {
+        let reply = |url: &str| {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let body = format!(r#"{{"webSocketDebuggerUrl":"{url}"}}"#);
+            thread::spawn(move || {
+                let (mut peer, _) = listener.accept().unwrap();
+                let mut request = [0u8; 1024];
+                let _ = peer.read(&mut request);
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+                peer.write_all(head.as_bytes()).unwrap();
+                peer.write_all(body.as_bytes()).unwrap();
+            });
+            websocket_url(&Endpoint::Port(port))
+        };
+        let err = reply("ws://192.0.2.1:9222/devtools/browser/x").unwrap_err();
+        assert_eq!(err.code(), "cdp_connect_failed");
+        let local = "ws://127.0.0.1:9222/devtools/browser/x";
+        assert_eq!(reply(local).unwrap(), local);
+    }
+
+    #[test]
+    fn a_slow_version_reply_fails_within_the_connect_limit() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let authority = listener.local_addr().unwrap().to_string();
+        thread::spawn(move || {
+            let (mut peer, _) = listener.accept().unwrap();
+            for _ in 0..12 {
+                if peer.write_all(b"H").is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
+        });
+        let begun = Instant::now();
+        assert!(version_url(&authority).is_err());
+        assert!(
+            begun.elapsed() < CONNECT_TIMEOUT + Duration::from_secs(2),
+            "{:?}",
+            begun.elapsed()
+        );
     }
 
     #[test]

@@ -82,7 +82,7 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
     loop {
         // Checked before the state is read, so an error written just before the
         // recorder exited is seen.
-        let alive = platform::process_alive(pid);
+        let alive = platform::process_started(pid).is_some();
         let late = begun.elapsed() >= timeout;
         // A read can race the recorder's rename; the next poll sees the new file.
         if let Ok(state) = dir.read_state() {
@@ -99,6 +99,9 @@ pub fn start(options: RecordOptions) -> Result<StartInfo> {
             }
         }
         if !alive || late {
+            // A recorder whose first frame comes just after the limit would otherwise
+            // record, unseen, until a cap; it reads the stop request on its first pass.
+            let _ = dir.request_stop();
             return Err(Error::RecorderStartFailed(dir.last_log_line()));
         }
         thread::sleep(POLL);
@@ -180,7 +183,9 @@ fn derived_status(dir: &RecordingDir) -> Result<Status> {
     }
     let young = time::now_unix_ms().saturating_sub(state.started_at_unix_ms)
         < start_timeout(&state.options.target).as_millis() as u64;
-    if (state.status == Status::Starting && young) || platform::process_alive(state.pid) {
+    if (state.status == Status::Starting && young)
+        || platform::process_started(state.pid).is_some_and(|t| t == state.pid_started)
+    {
         Ok(Status::Recording)
     } else {
         Ok(Status::Crashed)
@@ -193,26 +198,38 @@ fn await_result(dir: &RecordingDir) -> Result<RecordingResult> {
             return Ok(result);
         }
         if derived_status(dir)? == Status::Crashed {
-            return Err(Error::RecorderCrashed(dir.id().to_owned()));
+            // A recorder that failed says why in its state; only one that vanished
+            // without a word is a crash.
+            return Err(match dir.read_state()?.error {
+                Some(info) => Error::Relayed(info),
+                None => Error::RecorderCrashed(dir.id().to_owned()),
+            });
         }
         thread::sleep(POLL);
     }
 }
 
 /// Stored frames of a finished recording, picked by time, interval or keyframe.
+/// More than `max_count` picked is `TooManyFrames`, before any sample is written.
 pub fn frames(
     out: &Path,
     id: &str,
     selection: &FrameSelection,
     max_width: Option<u32>,
+    max_count: Option<usize>,
 ) -> Result<FrameList> {
     let dir = RecordingDir::open(out, id)?;
     if dir.read_result()?.is_none() {
-        return Err(Error::RecordingNotFound(id.to_owned()));
+        return Err(Error::RecordingNotFinished(id.to_owned()));
     }
     let manifest = dir.read_manifest()?;
     let diffs = dir.read_diff()?;
     let entries = analyze::select::select(&manifest, &diffs, selection);
+    if let Some(max) = max_count
+        && entries.len() > max
+    {
+        return Err(Error::TooManyFrames(entries.len()));
+    }
     Ok(FrameList {
         frames: analyze::select::frame_refs(&dir, &entries, max_width)?,
     })
@@ -246,6 +263,7 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         id: dir.id().to_owned(),
         status: Status::Starting,
         pid: 0,
+        pid_started: 0,
         started_at_unix_ms: now,
         width: 0,
         height: 0,
@@ -254,4 +272,37 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         error: None,
     })?;
     Ok(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reused_process_id_is_not_the_recorder() {
+        let options = crate::model::RecordOptions {
+            target: crate::model::Target::Fake(crate::model::FakeKind::Static),
+            fps: 15,
+            max_duration_ms: 10_000,
+            max_size_bytes: 1_000_000,
+            formats: Vec::new(),
+            cursor: true,
+            clicks: false,
+            out: PathBuf::new(),
+            duration_ms: None,
+            command: None,
+        };
+        let dir = crate::recorder::prepared(options, "reused-pid");
+        let mut state = dir.read_state().unwrap();
+        // This test's own process is alive, but it is not the process that wrote the state.
+        state.status = Status::Recording;
+        state.pid = std::process::id();
+        state.pid_started = 1;
+        dir.write_state(&state).unwrap();
+        assert_eq!(derived_status(&dir).unwrap(), Status::Crashed);
+
+        state.pid_started = platform::process_started(std::process::id()).unwrap();
+        dir.write_state(&state).unwrap();
+        assert_eq!(derived_status(&dir).unwrap(), Status::Recording);
+    }
 }

@@ -49,9 +49,16 @@ fn record_then_get_frames() {
     assert_eq!(recorded["content"][1]["mimeType"], "image/png");
     let id = result["id"].as_str().unwrap();
 
-    let many = server.call("get_frames", json!({"id": id, "every": "10ms", "out": out}));
+    // A small max_width makes every frame a sample, so a late limit check would write them.
+    let many = server.call(
+        "get_frames",
+        json!({"id": id, "every": "10ms", "max_width": 100, "out": out}),
+    );
     assert!(is_error(&many), "{many}");
     assert!(text(&many).contains("too_many_frames"), "{many}");
+    let samples = std::path::Path::new(out).join(id).join("samples");
+    let written = std::fs::read_dir(&samples).map_or(0, |dir| dir.count());
+    assert_eq!(written, 0, "samples written before the limit was checked");
 
     let one = server.call("get_frames", json!({"id": id, "at": ["500ms"], "out": out}));
     assert!(!is_error(&one), "{one}");
