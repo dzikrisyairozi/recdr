@@ -69,13 +69,27 @@ mod on_windows {
         assert!(result["frames_stored"].as_u64().unwrap() >= 1);
     }
 
-    /// Success criterion 17, through the CLI. A whole-monitor PNG passes 1 MB within the
-    /// first frames, so the cap ends the recording long before --duration.
+    /// Success criterion 17, through the CLI. A window that changes color every 50 ms
+    /// makes each monitor frame a new stored PNG of several hundred KB, so 1 MB ends the
+    /// recording long before --duration. A still desktop stores one frame (about 800 KB
+    /// here) and never reaches the cap.
     #[test]
     #[ignore]
     fn size_cap_ends_a_recording() {
+        let title = title("size-cap");
+        let script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object Windows.Forms.Form;              $f.Text = '{title}'; $f.Width = 640; $f.Height = 480; $f.TopMost = $true;              $t = New-Object Windows.Forms.Timer; $t.Interval = 50;              $t.Add_Tick({{ $f.BackColor = [Drawing.Color]::FromArgb((Get-Random 256), (Get-Random 256), (Get-Random 256)) }});              $t.Start(); [Windows.Forms.Application]::Run($f)"
+        );
+        let mut child = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .spawn()
+            .unwrap();
+        wait_for_window(&title);
         let args = ["--monitor", "0", "--max-size", "1MB", "--duration", "20s"];
-        let result = ok(&record("size-cap", &args));
+        let output = record("size-cap", &args);
+        let _ = child.kill();
+        let _ = child.wait();
+        let result = ok(&output);
         assert_eq!(result["stop_reason"], "size_cap_reached");
         assert!(result["duration_ms"].as_u64().unwrap() < 20_000);
     }
