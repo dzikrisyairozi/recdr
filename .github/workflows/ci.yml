@@ -194,3 +194,19 @@ jobs:
           } finally {
             Stop-Process $server -Force -ErrorAction SilentlyContinue
           }
+
+  # The Chinese README is a full translation; a pull request that changes README.md
+  # must change README.zh-CN.md too.
+  readme-sync:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: README.zh-CN.md changed with README.md
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if printf '%s\n' "$changed" | grep -qx README.md && ! printf '%s\n' "$changed" | grep -qx README.zh-CN.md; then
+            echo "::error::README.md changed without README.zh-CN.md"; exit 1
+          fi
