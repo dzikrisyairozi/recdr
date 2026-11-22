@@ -327,3 +327,4 @@ Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_re
 ## License
 
 MIT
+
