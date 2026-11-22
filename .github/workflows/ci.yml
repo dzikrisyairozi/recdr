@@ -112,3 +112,85 @@ jobs:
           grep -q 'does not match' out.txt
           [ "$(ls -la "$bin")" = "$before" ]
           [ -z "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'recdr-install.*' 2>/dev/null)" ]
+
+  # The same scenarios for install.ps1, in Windows PowerShell 5.1, plus an install over
+  # a recdr.exe that is running.
+  install-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - run: cargo build --release
+      - name: install scenarios
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert($ok, $what) { if (-not $ok) { throw "failed: $what" } }
+          function Run-Install {
+            # Windows PowerShell turns a native command's stderr into errors; keep going.
+            $ErrorActionPreference = 'Continue'
+            powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 *> out.txt
+            $script:code = $LASTEXITCODE
+            Get-Content out.txt
+          }
+          $rel = "$env:RUNNER_TEMP\rel"
+          $bin = "$env:RUNNER_TEMP\bin"
+          $dl = "$rel\download\v0.1.0"
+          New-Item -ItemType Directory -Force $dl, "$rel\latest\download", stage | Out-Null
+          Copy-Item target\release\recdr.exe, LICENSE, README.md stage\
+          $a = 'recdr-x86_64-pc-windows-msvc.zip'
+          Compress-Archive -Path stage\* -DestinationPath "$dl\$a"
+          "$((Get-FileHash -Algorithm SHA256 "$dl\$a").Hash.ToLower())  $a" | Set-Content -Encoding ascii "$dl\$a.sha256"
+          Copy-Item install.ps1 $dl
+          '0.1.0' | Set-Content -Encoding ascii "$rel\latest\download\version.txt"
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--directory', $rel -PassThru -WindowStyle Hidden
+          try {
+            foreach ($i in 1..50) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/latest/download/version.txt | Out-Null; break } catch { Start-Sleep -Milliseconds 200 } }
+            $env:RECDR_RELEASE_BASE = 'http://127.0.0.1:8765'
+            $env:RECDR_INSTALL_DIR = $bin
+
+            Write-Host '--- fresh install'
+            Run-Install
+            Assert ($code -eq 0) 'fresh install exits 0'
+            Assert ((& "$bin\recdr.exe" --version) -eq 'recdr 0.1.0') 'installed version'
+            Assert ((Get-Content out.txt)[-1] -eq 'claude mcp add recdr -- recdr mcp') 'last line'
+
+            Write-Host '--- second install'
+            Run-Install
+            Assert ($code -eq 0) 'second install exits 0'
+            Assert (-not (Test-Path "$bin\recdr.exe.old")) 'no .old after a second install'
+
+            Write-Host '--- install over a running recdr'
+            $env:RECDR_FAKE_SOURCE = 'moving'
+            $rec = Start-Process "$bin\recdr.exe" -ArgumentList 'record', '--monitor', '0', '--duration', '120s', '--format', 'none', '--out', "$env:RUNNER_TEMP\rec" -PassThru -WindowStyle Hidden
+            Remove-Item Env:RECDR_FAKE_SOURCE
+            Start-Sleep -Seconds 2
+            Run-Install
+            Assert ($code -eq 0) 'install over a running recdr exits 0'
+            Assert (Test-Path "$bin\recdr.exe.old") '.old kept while the old exe runs'
+            Stop-Process $rec -Force
+            Start-Sleep -Seconds 1
+            Run-Install
+            Assert (-not (Test-Path "$bin\recdr.exe.old")) '.old removed by the next install'
+
+            Write-Host '--- pinned version, no version.txt'
+            Remove-Item "$rel\latest\download\version.txt"
+            $env:RECDR_VERSION = '0.1.0'
+            Run-Install
+            Assert ($code -eq 0) 'pinned install exits 0'
+
+            Write-Host '--- corrupted archive'
+            $before = Get-ChildItem $bin | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+            'junk' | Set-Content "$dl\$a"
+            Run-Install
+            Assert ($code -eq 1) 'corrupted archive exits 1'
+            Assert ((Get-Content -Raw out.txt) -match 'does not match') 'checksum message'
+            $after = Get-ChildItem $bin | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+            Assert (($before -join ';') -eq ($after -join ';')) 'install folder unchanged'
+            Assert (-not (Get-ChildItem $env:TEMP -Filter 'recdr-install-*' -ErrorAction SilentlyContinue)) 'no temp folder left'
+          } finally {
+            Stop-Process $server -Force -ErrorAction SilentlyContinue
+          }
