@@ -194,6 +194,8 @@ jobs:
           } finally {
             Stop-Process $server -Force -ErrorAction SilentlyContinue
           }
+          # The corrupted-archive run left $LASTEXITCODE at 1, which the step would return.
+          exit 0
 
   # The Chinese README is a full translation; a pull request that changes README.md
   # must change README.zh-CN.md too.

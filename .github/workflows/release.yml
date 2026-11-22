@@ -86,9 +86,11 @@ jobs:
           [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
           if [ "${{ matrix.native }}" = true ]; then
-            "$bin" --version | tee /dev/stderr | grep -qx "recdr $version"
+            out=$("$bin" --version); echo "$out"
+            [ "$out" = "recdr $version" ]
           else
-            file "$bin" | tee /dev/stderr | grep -q x86_64
+            out=$(file "$bin"); echo "$out"
+            case "$out" in *x86_64*) ;; *) exit 1 ;; esac
           fi
           if [ "$RUNNER_OS" = Linux ]; then
             file "$bin" | grep -Eq 'static(ally|-pie) linked'
