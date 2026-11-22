@@ -357,3 +357,20 @@ pub struct MarkAck {
     pub id: String,
     pub label: String,
 }
+
+/// What `recdr update --check` prints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCheck {
+    pub current: String,
+    pub latest: String,
+    pub update_available: bool,
+}
+
+/// What `recdr update` prints. `path` is the binary that was, or would have been, replaced.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub current: String,
+    pub latest: String,
+    pub updated: bool,
+    pub path: PathBuf,
+}

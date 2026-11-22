@@ -13,12 +13,13 @@ use crate::export;
 use crate::model::{
     Endpoint, ExportOptions, ExportResult, Format, FrameList, FrameSelection, MarkAck, MonitorList,
     RecordOptions, RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList,
-    Target, WindowList,
+    Target, UpdateCheck, WindowList,
 };
 use crate::platform;
 use crate::recorder;
 use crate::store::RecordingDir;
 use crate::time;
+use crate::update;
 
 const POLL: Duration = Duration::from_millis(50);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -282,6 +283,11 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
         error: None,
     })?;
     Ok(dir)
+}
+
+/// Compares this binary with the newest release without changing anything.
+pub fn update_check() -> Result<UpdateCheck> {
+    update::check()
 }
 
 #[cfg(test)]

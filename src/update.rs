@@ -6,6 +6,10 @@
 //! so this file needs no `cfg`.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use crate::error::{Error, Result};
+use crate::model::UpdateCheck;
 
 /// The Rust target triple this binary was built for, set by `build.rs`.
 pub const TARGET: &str = env!("RECDR_TARGET");
@@ -18,6 +22,64 @@ pub enum Channel {
     Script,
     Homebrew,
     Cargo,
+}
+
+/// Compares this binary's version with the newest release. Changes nothing.
+pub fn check() -> Result<UpdateCheck> {
+    let latest = latest(&release_base())?;
+    Ok(UpdateCheck {
+        current: CURRENT.to_owned(),
+        update_available: Some(latest) > parse_version(CURRENT),
+        latest: format_version(latest),
+    })
+}
+
+const CURRENT: &str = env!("CARGO_PKG_VERSION");
+
+fn release_base() -> String {
+    std::env::var("RECDR_RELEASE_BASE")
+        .unwrap_or_else(|_| DEFAULT_RELEASE_BASE.to_owned())
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+/// The newest version, from `version.txt` of the latest release.
+fn latest(base: &str) -> Result<(u64, u64, u64)> {
+    let url = format!("{base}/latest/download/version.txt");
+    let text = curl(&[&url])?;
+    let text = String::from_utf8_lossy(&text);
+    parse_version(text.lines().next().unwrap_or_default())
+        .ok_or_else(|| Error::UpdateFailed(format!("{url} does not hold a version")))
+}
+
+/// Runs `curl -fsSL <args>`; the last argument is the URL.
+fn curl(args: &[&str]) -> Result<Vec<u8>> {
+    let output = Command::new("curl")
+        .arg("-fsSL")
+        .args(args)
+        .output()
+        .map_err(|_| Error::UpdateFailed("curl was not found; rerun the install command".into()))?;
+    if !output.status.success() {
+        return Err(Error::UpdateFailed(format!(
+            "curl {}: {}",
+            args.last().unwrap_or(&""),
+            last_line(&output.stderr)
+        )));
+    }
+    Ok(output.stdout)
+}
+
+fn last_line(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn format_version((major, minor, patch): (u64, u64, u64)) -> String {
+    format!("{major}.{minor}.{patch}")
 }
 
 /// `0.1.0`, `v0.1.0` or `0.1.0\n` as three numbers; anything else is `None`.

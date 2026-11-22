@@ -123,6 +123,7 @@ fn rule_3_unsafe_only_in_seven_files() {
 fn rule_4_front_ends_import_only_control_request_model_error() {
     let below = [
         "recorder::",
+        "update::",
         "capture::",
         "store::",
         "analyze::",
