@@ -13,7 +13,7 @@ use crate::export;
 use crate::model::{
     Endpoint, ExportOptions, ExportResult, Format, FrameList, FrameSelection, MarkAck, MonitorList,
     RecordOptions, RecordingResult, StartInfo, State, Status, StatusEntry, StatusList, TabList,
-    Target, UpdateCheck, WindowList,
+    Target, UpdateCheck, UpdateResult, WindowList,
 };
 use crate::platform;
 use crate::recorder;
@@ -288,6 +288,11 @@ fn prepare(options: RecordOptions) -> Result<RecordingDir> {
 /// Compares this binary with the newest release without changing anything.
 pub fn update_check() -> Result<UpdateCheck> {
     update::check()
+}
+
+/// Installs the newest release over this binary, unless Homebrew or cargo owns it.
+pub fn update() -> Result<UpdateResult> {
+    update::run()
 }
 
 #[cfg(test)]

@@ -310,9 +310,7 @@ pub fn run(serve_mcp: fn() -> Result<()>, open_gui: fn(PathBuf) -> Result<()>) -
             .and_then(open_gui)
             .map(|()| None),
         Command::Update(cmd) if cmd.check => text(control::update_check()),
-        Command::Update(_) => Err(Error::Usage(
-            "recdr update without --check is not built yet".into(),
-        )),
+        Command::Update(_) => text(control::update()),
     };
     match outcome {
         Ok(Some(text)) => {

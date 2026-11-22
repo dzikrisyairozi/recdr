@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{Error, Result};
-use crate::model::UpdateCheck;
+use crate::model::{UpdateCheck, UpdateResult};
 
 /// The Rust target triple this binary was built for, set by `build.rs`.
 pub const TARGET: &str = env!("RECDR_TARGET");
@@ -35,6 +35,86 @@ pub fn check() -> Result<UpdateCheck> {
 }
 
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
+
+/// Installs the newest release over this binary with that release's install script.
+/// Homebrew and cargo installs are refused: their own tool owns the file.
+pub fn run() -> Result<UpdateResult> {
+    let exe = plain(std::fs::canonicalize(std::env::current_exe()?)?);
+    let cargo_bin = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home_dir().map(|home| home.join(".cargo")))
+        .and_then(|home| std::fs::canonicalize(home.join("bin")).ok())
+        .map(plain);
+    match channel(&exe, cargo_bin.as_deref()) {
+        Channel::Homebrew => {
+            return Err(Error::ManagedInstall(
+                "recdr was installed by Homebrew; run `brew upgrade recdr`".into(),
+            ));
+        }
+        Channel::Cargo => {
+            return Err(Error::ManagedInstall(
+                "recdr was installed by cargo; run `cargo install recdr`".into(),
+            ));
+        }
+        Channel::Script => {}
+    }
+
+    let base = release_base();
+    let newest = latest(&base)?;
+    let result = |updated| UpdateResult {
+        current: CURRENT.to_owned(),
+        latest: format_version(newest),
+        updated,
+        path: exe.clone(),
+    };
+    if Some(newest) <= parse_version(CURRENT) {
+        return Ok(result(false));
+    }
+
+    let tmp = std::env::temp_dir().join(format!("recdr-update-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp)?;
+    let outcome = install(&base, &format_version(newest), &exe, &tmp);
+    let _ = std::fs::remove_dir_all(&tmp);
+    outcome.map(|()| result(true))
+}
+
+fn install(base: &str, version: &str, exe: &Path, tmp: &Path) -> Result<()> {
+    let script = script_name(TARGET);
+    let path = tmp.join(script);
+    curl(&[
+        "-o",
+        &path.to_string_lossy(),
+        &format!("{base}/download/v{version}/{script}"),
+    ])?;
+    let (program, args): (&str, &[&str]) = if script == "install.ps1" {
+        (
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+        )
+    } else {
+        ("sh", &[])
+    };
+    let output = Command::new(program)
+        .args(args)
+        .arg(&path)
+        .env("RECDR_VERSION", version)
+        .env("RECDR_INSTALL_DIR", exe.parent().unwrap_or(Path::new(".")))
+        .env("RECDR_RELEASE_BASE", base)
+        .output()
+        .map_err(|error| Error::UpdateFailed(format!("could not run {program}: {error}")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let line = last_line(&output.stderr);
+    Err(Error::UpdateFailed(if line.is_empty() {
+        format!(
+            "the install script exited with code {}",
+            output.status.code().unwrap_or(-1)
+        )
+    } else {
+        line
+    }))
+}
 
 fn release_base() -> String {
     std::env::var("RECDR_RELEASE_BASE")
