@@ -105,3 +105,32 @@ jobs:
         with:
           name: recdr-${{ matrix.target }}
           path: recdr-${{ matrix.target }}.*
+
+  # Every step here is safe to run twice, so a run that failed on a network error can be
+  # re-run as it is.
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: version and paths
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "DIST=$RUNNER_TEMP/dist" >> "$GITHUB_ENV"
+      # Outside the checkout, so `cargo publish` sees a clean tree.
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$VERSION" > "$DIST/version.txt"
+          cp install.sh install.ps1 "$DIST/"
+          ls -l "$DIST"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --generate-notes "$DIST"/*
