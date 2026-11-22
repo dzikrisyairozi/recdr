@@ -1,0 +1,107 @@
+name: release
+
+# A `v*` tag builds every target and publishes the release. A pull request that touches
+# the release files, or a manual run, builds and packs only (a dry run).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/formula.sh
+      - build.rs
+      - Cargo.toml
+      - install.sh
+      - install.ps1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            native: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            native: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            native: false
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            native: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            native: true
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag matches Cargo.toml
+        if: github.event_name == 'push'
+        run: test "$GITHUB_REF_NAME" = "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+          rustup target add "$TARGET"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        # The static C runtime lets the exe start on a Windows without the Visual C++ runtime.
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: pack (unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir stage
+          cp "target/$TARGET/release/recdr" LICENSE README.md stage/
+          tar -czf "recdr-$TARGET.tar.gz" -C stage .
+          if command -v sha256sum >/dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+          $sum "recdr-$TARGET.tar.gz" > "recdr-$TARGET.tar.gz.sha256"
+          cat "recdr-$TARGET.tar.gz.sha256"
+      - name: pack (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory stage | Out-Null
+          Copy-Item "target/$env:TARGET/release/recdr.exe", LICENSE, README.md stage/
+          $a = "recdr-$env:TARGET.zip"
+          Compress-Archive -Path stage/* -DestinationPath $a
+          "$((Get-FileHash -Algorithm SHA256 $a).Hash.ToLower())  $a" | Set-Content -Encoding ascii "$a.sha256"
+          Get-Content "$a.sha256"
+
+      - name: check the binary
+        run: |
+          bin="target/$TARGET/release/recdr"
+          [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "${{ matrix.native }}" = true ]; then
+            "$bin" --version | tee /dev/stderr | grep -qx "recdr $version"
+          else
+            file "$bin" | tee /dev/stderr | grep -q x86_64
+          fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            file "$bin" | grep -Eq 'static(ally|-pie) linked'
+          fi
+      - name: no Visual C++ runtime import
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Select-String -Path "target/$env:TARGET/release/recdr.exe" -Pattern VCRUNTIME140.dll -SimpleMatch -Quiet) {
+            throw "recdr.exe imports VCRUNTIME140.dll"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recdr-${{ matrix.target }}
+          path: recdr-${{ matrix.target }}.*
