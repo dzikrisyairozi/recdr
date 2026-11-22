@@ -135,6 +135,7 @@ fn publish(folder: &Path, version: &str, payload: &[u8]) {
 fn sha256(path: &Path) -> String {
     let output = if cfg!(windows) {
         Command::new("powershell")
+            .env_remove("PSModulePath")
             .args(["-NoProfile", "-Command"])
             .arg(format!(
                 "(Get-FileHash -Algorithm SHA256 '{}').Hash.ToLower()",
@@ -150,11 +151,10 @@ fn sha256(path: &Path) -> String {
         })
     }
     .unwrap();
-    String::from_utf8(output.stdout)
-        .unwrap()
+    String::from_utf8_lossy(&output.stdout)
         .split_whitespace()
         .next()
-        .unwrap()
+        .unwrap_or_else(|| panic!("no hash: {}", String::from_utf8_lossy(&output.stderr)))
         .to_owned()
 }
 
@@ -201,6 +201,7 @@ fn update_replaces_binary() {
         let status = Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(folder.join("download/v9.9.10/install.ps1"))
+            .env_remove("PSModulePath")
             .env("RECDR_INSTALL_DIR", dir)
             .env("RECDR_RELEASE_BASE", &base)
             .env_remove("RECDR_VERSION")

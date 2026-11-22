@@ -94,9 +94,12 @@ fn install(base: &str, version: &str, exe: &Path, tmp: &Path) -> Result<()> {
     } else {
         ("sh", &[])
     };
+    // From pwsh 7, PSModulePath names its own modules, which Windows PowerShell 5.1
+    // cannot load; without it 5.1 uses its default.
     let output = Command::new(program)
         .args(args)
         .arg(&path)
+        .env_remove("PSModulePath")
         .env("RECDR_VERSION", version)
         .env("RECDR_INSTALL_DIR", exe.parent().unwrap_or(Path::new(".")))
         .env("RECDR_RELEASE_BASE", base)
