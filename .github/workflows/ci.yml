@@ -45,3 +45,70 @@ jobs:
         # screen itself shows the page pale at that point (acceptance.md, criterion 5).
         # region_recording_is_the_region_size still checks that criterion's 400x300 size.
         run: cargo test --test desktop -- --ignored --test-threads=1 --show-output --skip region_inside_the_green_page_is_green
+
+  # Runs install.sh against a local copy of the release layout: a fresh install, a
+  # second install over it, a pinned version, and a corrupted archive.
+  install-sh:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - run: cargo build --release
+      - if: runner.os == 'Linux'
+        run: shellcheck install.sh
+      - name: install scenarios
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rel=$RUNNER_TEMP/rel
+          bin=$RUNNER_TEMP/bin
+          mkdir -p "$rel/download/v0.1.0" "$rel/latest/download" stage
+          # The Linux runner's build is glibc, packed under the musl name the script asks for.
+          cp target/release/recdr LICENSE README.md stage/
+          archive="$rel/download/v0.1.0/recdr-$TARGET.tar.gz"
+          tar -czf "$archive" -C stage .
+          if command -v sha256sum >/dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+          (cd "$(dirname "$archive")" && $sum "recdr-$TARGET.tar.gz" > "recdr-$TARGET.tar.gz.sha256")
+          cp install.sh "$rel/download/v0.1.0/"
+          echo 0.1.0 > "$rel/latest/download/version.txt"
+          python3 -m http.server 8765 --directory "$rel" >/dev/null 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 50); do curl -fs http://127.0.0.1:8765/latest/download/version.txt >/dev/null && break; sleep 0.2; done
+          export RECDR_RELEASE_BASE=http://127.0.0.1:8765 RECDR_INSTALL_DIR=$bin
+
+          echo "--- fresh install"
+          sh install.sh > out.txt 2>&1; cat out.txt
+          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+          [ "$(tail -n1 out.txt)" = 'claude mcp add recdr -- recdr mcp' ]
+
+          echo "--- second install"
+          sh install.sh > out.txt 2>&1; cat out.txt
+          [ ! -e "$bin/recdr.old" ]
+
+          echo "--- pinned version, no version.txt"
+          rm "$rel/latest/download/version.txt"
+          RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; cat out.txt
+          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+
+          echo "--- corrupted archive"
+          before=$(ls -la "$bin")
+          echo junk > "$archive"
+          set +e; RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; code=$?; set -e; cat out.txt
+          [ "$code" -eq 1 ]
+          grep -q 'does not match' out.txt
+          [ "$(ls -la "$bin")" = "$before" ]
+          [ -z "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'recdr-install.*' 2>/dev/null)" ]
