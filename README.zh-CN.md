@@ -16,7 +16,8 @@
 [![crates.io](https://img.shields.io/crates/v/recdr)](https://crates.io/crates/recdr)
 
 </div>
-  https://github.com/user-attachments/assets/b903fcf5-294d-473d-a2af-de5e2ef5af6f
+
+https://github.com/user-attachments/assets/b903fcf5-294d-473d-a2af-de5e2ef5af6f
 
 recdr 可以在 Windows 和 macOS 上录制一个窗口、一块屏幕区域或一台显示器，也可以在 Windows、Linux 和 macOS 上通过 Chrome DevTools Protocol 录制一个浏览器标签页，并留下 AI agent 能读取的文件：给人看的 GIF 或 MP4；给 agent 看的是一张由画面发生变化的时刻组成的缩略图总览（contact sheet）、逐帧的变化记录，以及以 PNG 格式保存的帧。agent 通过输出 JSON 的 CLI 或 MCP 服务器来控制它。
 
