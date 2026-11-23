@@ -27,6 +27,30 @@ pub fn select(
     }
 }
 
+/// The size to scale a `width` by `height` frame to, or `None` when it already fits.
+/// Never enlarges. Rounds down, like the resize in `frame_refs`.
+pub fn fit(
+    width: u32,
+    height: u32,
+    max_width: Option<u32>,
+    max_edge: Option<u32>,
+) -> Option<(u32, u32)> {
+    let scale = |a: u32, b: u32, c: u32| (u64::from(a) * u64::from(b) / u64::from(c.max(1))) as u32;
+    let mut limit = max_width.unwrap_or(width);
+    if let Some(edge) = max_edge {
+        limit = limit.min(if height > width {
+            scale(edge, width, height)
+        } else {
+            edge
+        });
+    }
+    if limit >= width {
+        return None;
+    }
+    let new_width = limit.max(1);
+    Some((new_width, scale(height, new_width, width).max(1)))
+}
+
 /// Paths to the frames, scaled down into `samples/` when wider than `max_width`.
 pub fn frame_refs(
     dir: &RecordingDir,
@@ -95,6 +119,15 @@ mod tests {
 
     fn times(entries: Vec<FrameEntry>) -> Vec<u64> {
         entries.iter().map(|e| e.t_ms).collect()
+    }
+
+    #[test]
+    fn fit_caps_width_and_long_edge() {
+        assert_eq!(fit(1080, 2400, Some(1024), Some(2000)), Some((900, 2000)));
+        assert_eq!(fit(1080, 2400, Some(4000), Some(2000)), Some((900, 2000)));
+        assert_eq!(fit(1080, 2400, Some(1024), None), Some((1024, 2275)));
+        assert_eq!(fit(320, 240, Some(1024), Some(2000)), None);
+        assert_eq!(fit(3000, 1000, None, Some(2000)), Some((2000, 666)));
     }
 
     #[test]
