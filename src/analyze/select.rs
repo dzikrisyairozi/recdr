@@ -28,7 +28,8 @@ pub fn select(
 }
 
 /// The size to scale a `width` by `height` frame to, or `None` when it already fits.
-/// Never enlarges. Rounds down, like the resize in `frame_refs`.
+/// Never enlarges. Rounds down, like the resize in `frame_refs`. A frame thinner than
+/// 1:`max_edge` is squashed, since 1 px is as narrow as it gets.
 pub fn fit(
     width: u32,
     height: u32,
@@ -48,7 +49,8 @@ pub fn fit(
         return None;
     }
     let new_width = limit.max(1);
-    Some((new_width, scale(height, new_width, width).max(1)))
+    let new_height = scale(height, new_width, width).min(max_edge.unwrap_or(u32::MAX));
+    Some((new_width, new_height.max(1)))
 }
 
 /// Paths to the frames, scaled down into `samples/` when wider than `max_width` or
@@ -129,6 +131,8 @@ mod tests {
         assert_eq!(fit(1080, 2400, Some(1024), None), Some((1024, 2275)));
         assert_eq!(fit(320, 240, Some(1024), Some(2000)), None);
         assert_eq!(fit(3000, 1000, None, Some(2000)), Some((2000, 666)));
+        // Thinner than 1:2000: only squashing the height keeps it inside the edge.
+        assert_eq!(fit(1, 3000, None, Some(2000)), Some((1, 2000)));
     }
 
     // A tenth of a 1080 by 2400 phone screen: full-size PNGs took 6 s in a debug build.
