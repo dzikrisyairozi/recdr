@@ -5,7 +5,7 @@ use image::{Rgba, RgbaImage};
 
 use crate::draw;
 use crate::error::Result;
-use crate::model::{DiffEntry, Manifest};
+use crate::model::{DiffEntry, MAX_IMAGE_EDGE, Manifest};
 use crate::store::RecordingDir;
 
 pub const MAX_TILES: usize = 12;
@@ -35,13 +35,18 @@ pub fn contact_sheet(
         .filter(|&i| diffs.get(i).is_some_and(|d| d.keyframe))
         .collect();
     let tiles = pick_tiles(&keyframes, MAX_TILES);
-    let tile_width = manifest.width.clamp(1, TILE_MAX_WIDTH);
-    let tile_height = (u64::from(manifest.height) * u64::from(tile_width)
-        / u64::from(manifest.width.max(1)))
-    .max(1) as u32;
     let count = tiles.len().max(1) as u32;
     let columns = (f64::from(count).sqrt().ceil() as u32).max(1);
     let rows = count.div_ceil(columns);
+    // The tallest tile that keeps every row inside MAX_IMAGE_EDGE, as a width.
+    // Width needs no check: 12 tiles make at most 4 columns of 480 px, 1940 px in all.
+    let tallest = ((MAX_IMAGE_EDGE - GAP) / rows).saturating_sub(STRIP + GAP);
+    let by_rows = (u64::from(tallest) * u64::from(manifest.width.max(1))
+        / u64::from(manifest.height.max(1))) as u32;
+    let tile_width = manifest.width.clamp(1, TILE_MAX_WIDTH).min(by_rows).max(1);
+    let tile_height = (u64::from(manifest.height) * u64::from(tile_width)
+        / u64::from(manifest.width.max(1)))
+    .max(1) as u32;
     let mut sheet = RgbaImage::from_pixel(
         GAP + columns * (tile_width + GAP),
         GAP + rows * (tile_height + STRIP + GAP),
@@ -114,41 +119,65 @@ mod tests {
         assert_eq!(picked[11], 29);
     }
 
-    fn sheet_with(marks: Vec<Mark>, name: &str) -> RgbaImage {
+    /// A sheet of `count` keyframes of `width` by `height`, 100 ms apart, each its own shade.
+    fn sheet_of(width: u32, height: u32, count: u64, marks: Vec<Mark>, name: &str) -> RgbaImage {
         let out = std::env::temp_dir().join(format!("recdr-unit-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         let dir = RecordingDir::create(&out, 0).unwrap();
-        let mut writer = dir.frame_writer(200, 48).unwrap();
-        for (t_ms, shade) in [(0, 0u8), (500, 200)] {
-            let rgba = [shade, shade, shade, 255].repeat(200 * 48);
-            let frame = Frame {
-                width: 200,
-                height: 48,
-                rgba,
-            };
-            writer.push(frame, t_ms).unwrap();
+        let mut writer = dir.frame_writer(width, height).unwrap();
+        for i in 0..count {
+            let shade = (i * 20) as u8;
+            let rgba = [shade, shade, shade, 255].repeat((width * height) as usize);
+            writer
+                .push(
+                    Frame {
+                        width,
+                        height,
+                        rgba,
+                    },
+                    i * 100,
+                )
+                .unwrap();
         }
         let manifest = Manifest {
             id: String::new(),
-            width: 200,
-            height: 48,
+            width,
+            height,
             fps: 15,
             started_at_unix_ms: 0,
-            duration_ms: 1000,
+            duration_ms: count * 100,
             frames: writer.finish(),
             marks,
             clicks: Vec::new(),
             stop_reason: StopReason::Stopped,
             dropped_frames: 0,
         };
-        let diffs = [0, 500].map(|t_ms| DiffEntry {
-            t_ms,
-            changed_fraction: 0.0,
-            bbox: None,
-            keyframe: true,
-        });
+        let diffs: Vec<DiffEntry> = (0..count)
+            .map(|i| DiffEntry {
+                t_ms: i * 100,
+                changed_fraction: 0.0,
+                bbox: None,
+                keyframe: true,
+            })
+            .collect();
         let path = contact_sheet(&dir, &manifest, &diffs).unwrap();
         image::open(path).unwrap().to_rgba8()
+    }
+
+    fn sheet_with(marks: Vec<Mark>, name: &str) -> RgbaImage {
+        sheet_of(200, 48, 2, marks, name)
+    }
+
+    #[test]
+    fn a_portrait_sheet_fits_in_2000() {
+        let sheet = sheet_of(1080, 2400, 12, Vec::new(), "sheet-portrait");
+        assert_eq!(sheet.dimensions(), (1172, 1996));
+    }
+
+    #[test]
+    fn a_landscape_sheet_keeps_its_size() {
+        let sheet = sheet_of(1920, 1080, 12, Vec::new(), "sheet-landscape");
+        assert_eq!(sheet.dimensions(), (1940, 886));
     }
 
     #[test]
