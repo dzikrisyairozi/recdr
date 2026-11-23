@@ -295,7 +295,7 @@ A recording lives in `<out>/<id>/`:
 | `frames/000001.png`, ... | Each frame that differs from the one before it. |
 | `manifest.json` | Size, fps, duration, each frame's time, marks, clicks, stop reason, dropped frames. |
 | `diff.json` | For each frame: the share of pixels that changed, the box around them, and whether it is a keyframe. |
-| `contact_sheet.png` | Up to 12 keyframes in a grid, each labelled with its time and any marks. |
+| `contact_sheet.png` | Up to 12 keyframes in a grid, each labelled with its time and any marks. At most 2000 px on each edge. |
 | `recording.gif`, `recording.mp4` | The formats asked for, with a ring drawn for 400 ms after each click. |
 | `result.json` | What `stop` and `record` print. |
 
@@ -309,7 +309,7 @@ Register the server with Claude Code:
 claude mcp add recdr -- /path/to/recdr mcp
 ```
 
-Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_recording`, `record`, `mark`, `get_status`, `get_frames` and `export`. Each returns the same JSON the CLI prints. `stop_recording` and `record` also return the contact sheet as an image, and `get_frames` returns up to 8 frames as images.
+Tools: `list_windows`, `list_monitors`, `list_tabs`, `start_recording`, `stop_recording`, `record`, `mark`, `get_status`, `get_frames` and `export`. Each returns the same JSON the CLI prints. `stop_recording` and `record` also return the contact sheet as an image, and `get_frames` returns up to 8 frames as images. Every image is at most 2000 px on each edge; `get_frames` scales frames down to `max_width` (default 1024) and, for a tall frame, further down to fit.
 
 ## Limits
 

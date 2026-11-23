@@ -309,7 +309,7 @@ cargo test --test browser -- --ignored --test-threads=1      # starts headless C
 | `frames/000001.png`, ... | 与上一帧不同的每一帧。 |
 | `manifest.json` | 尺寸、fps、时长、每一帧的时间、标记、点击、停止原因、丢弃的帧。 |
 | `diff.json` | 每一帧的变化像素占比、包围这些像素的框，以及该帧是否为关键帧。 |
-| `contact_sheet.png` | 最多 12 个关键帧排成的网格，每个都标注了时间和标记。 |
+| `contact_sheet.png` | 最多 12 个关键帧排成的网格，每个都标注了时间和标记。每条边最多 2000 px。 |
 | `recording.gif`, `recording.mp4` | 所请求的格式，每次点击后会绘制一个持续 400 ms 的圆环。 |
 | `result.json` | `stop` 和 `record` 打印的内容。 |
 
@@ -324,7 +324,7 @@ cargo test --test browser -- --ignored --test-threads=1      # starts headless C
 claude mcp add recdr -- /path/to/recdr mcp
 ```
 
-工具：`list_windows`、`list_monitors`、`list_tabs`、`start_recording`、`stop_recording`、`record`、`mark`、`get_status`、`get_frames` 和 `export`。每个工具返回的 JSON 与 CLI 打印的相同。`stop_recording` 和 `record` 还会以图片形式返回缩略图总览，`get_frames` 以图片形式返回最多 8 帧。
+工具：`list_windows`、`list_monitors`、`list_tabs`、`start_recording`、`stop_recording`、`record`、`mark`、`get_status`、`get_frames` 和 `export`。每个工具返回的 JSON 与 CLI 打印的相同。`stop_recording` 和 `record` 还会以图片形式返回缩略图总览，`get_frames` 以图片形式返回最多 8 帧。每张图片每条边最多 2000 px；`get_frames` 会把帧缩小到 `max_width`（默认 1024），过高的帧会再缩小到符合这个限制。
 
 <a id="limits"></a>
 ## 限制
