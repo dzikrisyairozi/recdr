@@ -324,7 +324,7 @@ cargo test --test browser -- --ignored --test-threads=1      # starts headless C
 claude mcp add recdr -- /path/to/recdr mcp
 ```
 
-工具：`list_windows`、`list_monitors`、`list_tabs`、`start_recording`、`stop_recording`、`record`、`mark`、`get_status`、`get_frames` 和 `export`。每个工具返回的 JSON 与 CLI 打印的相同。`stop_recording` 和 `record` 还会以图片形式返回缩略图总览，`get_frames` 以图片形式返回最多 8 帧。每张图片每条边最多 2000 px；`get_frames` 会把帧缩小到 `max_width`（默认 1024），过高的帧会再缩小到符合这个限制。
+工具：`list_windows`、`list_monitors`、`list_tabs`、`start_recording`、`stop_recording`、`record`、`mark`、`get_status`、`get_frames` 和 `export`。每个工具返回的 JSON 与 CLI 打印的相同。`stop_recording` 和 `record` 还会以图片形式返回缩略图总览，`get_frames` 以图片形式返回最多 8 帧。每张图片每条边最多 2000 px；`get_frames` 会把帧缩小到 `max_width`（默认 1024），如果仍有一条边超过 2000 px，会再缩小。
 
 <a id="limits"></a>
 ## 限制
