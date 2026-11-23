@@ -4,6 +4,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// Longest edge of an image an agent gets: Claude Code errors on a larger one once a
+/// session holds many images (comment on #1). Also written out in the `max_width` doc
+/// in mcp.rs and in both READMEs.
+pub const MAX_IMAGE_EDGE: u32 = 2000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: i32,

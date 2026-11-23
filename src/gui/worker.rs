@@ -31,15 +31,17 @@ pub fn perform(out: &Path, action: Action) -> Option<Event> {
             duration_ms: result.duration_ms,
         }),
         Action::Preview { id, t_ms } => {
-            control::frames(out, &id, &FrameSelection::At(vec![t_ms]), None, None).map(|list| {
-                list.frames.into_iter().next().map_or_else(
-                    || Event::Failed(format!("recording {id} has no stored frame")),
-                    |frame| Event::Picture {
-                        t_ms,
-                        path: frame.path,
-                    },
-                )
-            })
+            control::frames(out, &id, &FrameSelection::At(vec![t_ms]), None, None, None).map(
+                |list| {
+                    list.frames.into_iter().next().map_or_else(
+                        || Event::Failed(format!("recording {id} has no stored frame")),
+                        |frame| Event::Picture {
+                            t_ms,
+                            path: frame.path,
+                        },
+                    )
+                },
+            )
         }
         Action::Export(request) => {
             return Some(

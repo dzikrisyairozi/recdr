@@ -220,10 +220,11 @@ impl RecordingDir {
         Ok(image::open(self.frame_path(entry))?.to_rgba8())
     }
 
-    pub fn sample_path(&self, entry: &FrameEntry, max_width: u32) -> Result<PathBuf> {
+    /// A scaled copy of a frame, named by the width it is written at.
+    pub fn sample_path(&self, entry: &FrameEntry, width: u32) -> Result<PathBuf> {
         let dir = self.path.join(SAMPLES);
         fs::create_dir_all(&dir)?;
-        Ok(dir.join(format!("{:06}-w{max_width}.png", entry.index)))
+        Ok(dir.join(format!("{:06}-w{width}.png", entry.index)))
     }
 
     pub fn contact_sheet_path(&self) -> PathBuf {

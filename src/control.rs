@@ -227,6 +227,7 @@ pub fn frames(
     id: &str,
     selection: &FrameSelection,
     max_width: Option<u32>,
+    max_edge: Option<u32>,
     max_count: Option<usize>,
 ) -> Result<FrameList> {
     let dir = RecordingDir::open(out, id)?;
@@ -242,7 +243,7 @@ pub fn frames(
         return Err(Error::TooManyFrames(entries.len()));
     }
     Ok(FrameList {
-        frames: analyze::select::frame_refs(&dir, &entries, max_width)?,
+        frames: analyze::select::frame_refs(&dir, &entries, max_width, max_edge)?,
     })
 }
 

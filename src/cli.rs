@@ -300,7 +300,7 @@ pub fn run(serve_mcp: fn() -> Result<()>, open_gui: fn(PathBuf) -> Result<()>) -
             request::parse_selection(&cmd.at, cmd.every.as_deref(), cmd.keyframes).and_then(
                 |selection| {
                     let out = request::resolve_out(cmd.out)?;
-                    control::frames(&out, &cmd.id, &selection, cmd.max_width, None)
+                    control::frames(&out, &cmd.id, &selection, cmd.max_width, None, None)
                 },
             ),
         ),
