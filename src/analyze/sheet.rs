@@ -44,9 +44,10 @@ pub fn contact_sheet(
     let by_rows = (u64::from(tallest) * u64::from(manifest.width.max(1))
         / u64::from(manifest.height.max(1))) as u32;
     let tile_width = manifest.width.clamp(1, TILE_MAX_WIDTH).min(by_rows).max(1);
+    // Clamped too: a 1 px wide tile of a frame thinner than that ratio is squashed.
     let tile_height = (u64::from(manifest.height) * u64::from(tile_width)
         / u64::from(manifest.width.max(1)))
-    .max(1) as u32;
+    .clamp(1, u64::from(tallest.max(1))) as u32;
     let mut sheet = RgbaImage::from_pixel(
         GAP + columns * (tile_width + GAP),
         GAP + rows * (tile_height + STRIP + GAP),
@@ -175,6 +176,13 @@ mod tests {
     fn a_portrait_sheet_fits_in_2000() {
         let sheet = sheet_of(1080, 2400, 12, Vec::new(), "sheet-portrait");
         assert_eq!(sheet.dimensions(), (1172, 1996));
+    }
+
+    #[test]
+    fn a_slit_sheet_fits_in_2000() {
+        // A 1 px wide tile of a 2 by 1400 frame is still 700 px tall; three rows of it are not.
+        let sheet = sheet_of(2, 1400, 12, Vec::new(), "sheet-slit");
+        assert!(sheet.height() <= MAX_IMAGE_EDGE, "{:?}", sheet.dimensions());
     }
 
     #[test]
