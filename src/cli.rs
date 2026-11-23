@@ -43,6 +43,8 @@ enum Command {
     Mcp,
     /// Open the recorder window
     Gui(GuiCmd),
+    /// Install the newest release over this binary
+    Update(UpdateCmd),
     /// The background recorder that `start` spawns
     #[command(name = "_recorder", hide = true)]
     Recorder { dir: PathBuf },
@@ -207,6 +209,13 @@ struct GuiCmd {
     out: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct UpdateCmd {
+    /// Only report whether a newer release exists
+    #[arg(long)]
+    check: bool,
+}
+
 impl ExportCmd {
     fn into_request(self) -> ExportRequest {
         ExportRequest {
@@ -300,6 +309,8 @@ pub fn run(serve_mcp: fn() -> Result<()>, open_gui: fn(PathBuf) -> Result<()>) -
         Command::Gui(cmd) => request::resolve_out(cmd.out)
             .and_then(open_gui)
             .map(|()| None),
+        Command::Update(cmd) if cmd.check => text(control::update_check()),
+        Command::Update(_) => text(control::update()),
     };
     match outcome {
         Ok(Some(text)) => {

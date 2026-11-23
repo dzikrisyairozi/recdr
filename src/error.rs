@@ -53,6 +53,11 @@ pub enum Error {
         "macOS has not given this program the Screen Recording permission. Open System Settings > Privacy & Security > Screen & System Audio Recording, switch on the program that started recdr (your terminal or editor), restart that program, and run recdr again."
     )]
     PermissionDenied,
+    /// `recdr update` on a copy that Homebrew or cargo owns; the message names the command.
+    #[error("{0}")]
+    ManagedInstall(String),
+    #[error("update failed: {0}")]
+    UpdateFailed(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -80,6 +85,8 @@ impl Error {
             Error::UnsupportedPlatform => "unsupported_platform",
             Error::CdpConnectFailed(_) => "cdp_connect_failed",
             Error::PermissionDenied => "permission_denied",
+            Error::ManagedInstall(_) => "managed_install",
+            Error::UpdateFailed(_) => "update_failed",
             Error::Io(_) => "io_error",
         }
     }
@@ -218,9 +225,11 @@ mod tests {
             (Error::UnsupportedPlatform, "unsupported_platform"),
             (Error::CdpConnectFailed(String::new()), "cdp_connect_failed"),
             (Error::PermissionDenied, "permission_denied"),
+            (Error::ManagedInstall(String::new()), "managed_install"),
+            (Error::UpdateFailed(String::new()), "update_failed"),
             (Error::Io(std::io::Error::other("x")), "io_error"),
         ];
-        assert_eq!(all.len(), 19);
+        assert_eq!(all.len(), 21);
         for (error, code) in &all {
             assert_eq!(error.code(), *code);
             let expected_exit = if *code == "usage" { 2 } else { 1 };

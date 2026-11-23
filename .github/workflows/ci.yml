@@ -45,3 +45,170 @@ jobs:
         # screen itself shows the page pale at that point (acceptance.md, criterion 5).
         # region_recording_is_the_region_size still checks that criterion's 400x300 size.
         run: cargo test --test desktop -- --ignored --test-threads=1 --show-output --skip region_inside_the_green_page_is_green
+
+  # Runs install.sh against a local copy of the release layout: a fresh install, a
+  # second install over it, a pinned version, and a corrupted archive.
+  install-sh:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - run: cargo build --release
+      - if: runner.os == 'Linux'
+        run: shellcheck install.sh
+      - name: install scenarios
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rel=$RUNNER_TEMP/rel
+          bin=$RUNNER_TEMP/bin
+          mkdir -p "$rel/download/v0.1.0" "$rel/latest/download" stage
+          # The Linux runner's build is glibc, packed under the musl name the script asks for.
+          cp target/release/recdr LICENSE README.md stage/
+          archive="$rel/download/v0.1.0/recdr-$TARGET.tar.gz"
+          tar -czf "$archive" -C stage .
+          if command -v sha256sum >/dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+          (cd "$(dirname "$archive")" && $sum "recdr-$TARGET.tar.gz" > "recdr-$TARGET.tar.gz.sha256")
+          cp install.sh "$rel/download/v0.1.0/"
+          echo 0.1.0 > "$rel/latest/download/version.txt"
+          python3 -m http.server 8765 --directory "$rel" >/dev/null 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 50); do curl -fs http://127.0.0.1:8765/latest/download/version.txt >/dev/null && break; sleep 0.2; done
+          export RECDR_RELEASE_BASE=http://127.0.0.1:8765 RECDR_INSTALL_DIR=$bin
+
+          echo "--- fresh install"
+          sh install.sh > out.txt 2>&1; cat out.txt
+          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+          [ "$(tail -n1 out.txt)" = 'claude mcp add recdr -- recdr mcp' ]
+
+          echo "--- second install"
+          sh install.sh > out.txt 2>&1; cat out.txt
+          [ ! -e "$bin/recdr.old" ]
+
+          echo "--- pinned version, no version.txt"
+          rm "$rel/latest/download/version.txt"
+          RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; cat out.txt
+          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+
+          echo "--- corrupted archive"
+          before=$(ls -la "$bin")
+          echo junk > "$archive"
+          set +e; RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; code=$?; set -e; cat out.txt
+          [ "$code" -eq 1 ]
+          grep -q 'does not match' out.txt
+          [ "$(ls -la "$bin")" = "$before" ]
+          [ -z "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'recdr-install.*' 2>/dev/null)" ]
+
+  # The same scenarios for install.ps1, in Windows PowerShell 5.1, plus an install over
+  # a recdr.exe that is running.
+  install-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - run: cargo build --release
+      - name: install scenarios
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert($ok, $what) { if (-not $ok) { throw "failed: $what" } }
+          function Run-Install {
+            # Windows PowerShell turns a native command's stderr into errors; keep going.
+            $ErrorActionPreference = 'Continue'
+            powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 *> out.txt
+            $script:code = $LASTEXITCODE
+            Get-Content out.txt
+          }
+          $rel = "$env:RUNNER_TEMP\rel"
+          $bin = "$env:RUNNER_TEMP\bin"
+          $dl = "$rel\download\v0.1.0"
+          New-Item -ItemType Directory -Force $dl, "$rel\latest\download", stage | Out-Null
+          Copy-Item target\release\recdr.exe, LICENSE, README.md stage\
+          $a = 'recdr-x86_64-pc-windows-msvc.zip'
+          Compress-Archive -Path stage\* -DestinationPath "$dl\$a"
+          "$((Get-FileHash -Algorithm SHA256 "$dl\$a").Hash.ToLower())  $a" | Set-Content -Encoding ascii "$dl\$a.sha256"
+          Copy-Item install.ps1 $dl
+          '0.1.0' | Set-Content -Encoding ascii "$rel\latest\download\version.txt"
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--directory', $rel -PassThru -WindowStyle Hidden
+          try {
+            foreach ($i in 1..50) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/latest/download/version.txt | Out-Null; break } catch { Start-Sleep -Milliseconds 200 } }
+            $env:RECDR_RELEASE_BASE = 'http://127.0.0.1:8765'
+            $env:RECDR_INSTALL_DIR = $bin
+
+            Write-Host '--- fresh install'
+            Run-Install
+            Assert ($code -eq 0) 'fresh install exits 0'
+            Assert ((& "$bin\recdr.exe" --version) -eq 'recdr 0.1.0') 'installed version'
+            Assert ((Get-Content out.txt)[-1] -eq 'claude mcp add recdr -- recdr mcp') 'last line'
+
+            Write-Host '--- second install'
+            Run-Install
+            Assert ($code -eq 0) 'second install exits 0'
+            Assert (-not (Test-Path "$bin\recdr.exe.old")) 'no .old after a second install'
+
+            Write-Host '--- install over a running recdr'
+            $env:RECDR_FAKE_SOURCE = 'moving'
+            $rec = Start-Process "$bin\recdr.exe" -ArgumentList 'record', '--monitor', '0', '--duration', '120s', '--format', 'none', '--out', "$env:RUNNER_TEMP\rec" -PassThru -WindowStyle Hidden
+            Remove-Item Env:RECDR_FAKE_SOURCE
+            Start-Sleep -Seconds 2
+            Run-Install
+            Assert ($code -eq 0) 'install over a running recdr exits 0'
+            Assert (Test-Path "$bin\recdr.exe.old") '.old kept while the old exe runs'
+            Stop-Process $rec -Force
+            Start-Sleep -Seconds 1
+            Run-Install
+            Assert (-not (Test-Path "$bin\recdr.exe.old")) '.old removed by the next install'
+
+            Write-Host '--- pinned version, no version.txt'
+            Remove-Item "$rel\latest\download\version.txt"
+            $env:RECDR_VERSION = '0.1.0'
+            Run-Install
+            Assert ($code -eq 0) 'pinned install exits 0'
+
+            Write-Host '--- corrupted archive'
+            $before = Get-ChildItem $bin | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+            'junk' | Set-Content "$dl\$a"
+            Run-Install
+            Assert ($code -eq 1) 'corrupted archive exits 1'
+            Assert ((Get-Content -Raw out.txt) -match 'does not match') 'checksum message'
+            $after = Get-ChildItem $bin | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+            Assert (($before -join ';') -eq ($after -join ';')) 'install folder unchanged'
+            Assert (-not (Get-ChildItem $env:TEMP -Filter 'recdr-install-*' -ErrorAction SilentlyContinue)) 'no temp folder left'
+          } finally {
+            Stop-Process $server -Force -ErrorAction SilentlyContinue
+          }
+          # The corrupted-archive run left $LASTEXITCODE at 1, which the step would return.
+          exit 0
+
+  # The Chinese README is a full translation; a pull request that changes README.md
+  # must change README.zh-CN.md too.
+  readme-sync:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: README.zh-CN.md changed with README.md
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if printf '%s\n' "$changed" | grep -qx README.md && ! printf '%s\n' "$changed" | grep -qx README.zh-CN.md; then
+            echo "::error::README.md changed without README.zh-CN.md"; exit 1
+          fi

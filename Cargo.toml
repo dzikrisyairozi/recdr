@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Screen recorder that AI agents drive through a CLI and an MCP server"
+rust-version = "1.98"
+repository = "https://github.com/dzikrisyairozi/recdr"
+homepage = "https://recdr.dev"
+readme = "README.md"
+keywords = ["screen-recorder", "mcp", "ai-agents", "gif", "cli"]
+categories = ["command-line-utilities", "multimedia::video"]
+exclude = [".github", "site", "assets", "install.sh", "install.ps1", "README.zh-CN.md"]
 
 [lib]
 path = "src/lib.rs"

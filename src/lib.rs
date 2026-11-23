@@ -14,5 +14,6 @@ pub mod recorder;
 pub mod request;
 pub mod store;
 pub mod time;
+pub mod update;
 
 pub use error::{Error, Result};

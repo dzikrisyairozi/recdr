@@ -4,6 +4,11 @@
 //! decision 15).
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    // `recdr update` picks the install script from the triple it was built for.
+    println!(
+        "cargo:rustc-env=RECDR_TARGET={}",
+        std::env::var("TARGET").unwrap()
+    );
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
         if let Ok(out) = std::process::Command::new("xcode-select")

@@ -206,18 +206,24 @@ fn answer(mut stream: TcpStream) {
         }
     }
     let path = request.split_whitespace().nth(1).unwrap_or_default();
-    let (status, body) = match path {
-        "/anim" => ("200 OK", ANIMATION),
-        "/still" => ("200 OK", STILL),
-        "/green" => ("200 OK", GREEN),
-        _ => ("404 Not Found", ""),
+    // `/fs/<rest>` serves `temp_dir()/<rest>`: the release folders of tests/update.rs.
+    let file = path
+        .strip_prefix("/fs/")
+        .map(|rest| std::fs::read(std::env::temp_dir().join(rest)));
+    let (status, kind, body): (&str, &str, Vec<u8>) = match (path, file) {
+        (_, Some(Ok(bytes))) => ("200 OK", "application/octet-stream", bytes),
+        ("/anim", None) => ("200 OK", "text/html", ANIMATION.into()),
+        ("/still", None) => ("200 OK", "text/html", STILL.into()),
+        ("/green", None) => ("200 OK", "text/html", GREEN.into()),
+        _ => ("404 Not Found", "text/html", Vec::new()),
     };
     let _ = write!(
         stream,
-        "HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
+        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n",
         body.len()
     );
+    let _ = stream.write_all(&body);
 }
 
 pub fn chrome_path() -> PathBuf {

@@ -1,0 +1,186 @@
+name: release
+
+# A `v*` tag builds every target and publishes the release. A pull request that touches
+# the release files, or a manual run, builds and packs only (a dry run).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/formula.sh
+      - build.rs
+      - Cargo.toml
+      - install.sh
+      - install.ps1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            native: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            native: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            native: false
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            native: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            native: true
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag matches Cargo.toml
+        if: github.event_name == 'push'
+        run: test "$GITHUB_REF_NAME" = "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+          rustup target add "$TARGET"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        # The static C runtime lets the exe start on a Windows without the Visual C++ runtime.
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: pack (unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir stage
+          cp "target/$TARGET/release/recdr" LICENSE README.md stage/
+          tar -czf "recdr-$TARGET.tar.gz" -C stage .
+          if command -v sha256sum >/dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+          $sum "recdr-$TARGET.tar.gz" > "recdr-$TARGET.tar.gz.sha256"
+          cat "recdr-$TARGET.tar.gz.sha256"
+      - name: pack (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory stage | Out-Null
+          Copy-Item "target/$env:TARGET/release/recdr.exe", LICENSE, README.md stage/
+          $a = "recdr-$env:TARGET.zip"
+          Compress-Archive -Path stage/* -DestinationPath $a
+          "$((Get-FileHash -Algorithm SHA256 $a).Hash.ToLower())  $a" | Set-Content -Encoding ascii "$a.sha256"
+          Get-Content "$a.sha256"
+
+      - name: check the binary
+        run: |
+          bin="target/$TARGET/release/recdr"
+          [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "${{ matrix.native }}" = true ]; then
+            out=$("$bin" --version); echo "$out"
+            [ "$out" = "recdr $version" ]
+          else
+            out=$(file "$bin"); echo "$out"
+            case "$out" in *x86_64*) ;; *) exit 1 ;; esac
+          fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            file "$bin" | grep -Eq 'static(ally|-pie) linked'
+          fi
+      - name: no Visual C++ runtime import
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Select-String -Path "target/$env:TARGET/release/recdr.exe" -Pattern VCRUNTIME140.dll -SimpleMatch -Quiet) {
+            throw "recdr.exe imports VCRUNTIME140.dll"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recdr-${{ matrix.target }}
+          path: recdr-${{ matrix.target }}.*
+
+  # Prints the formula a release would push, so a pull request shows it is valid Ruby.
+  formula-dry-run:
+    needs: build
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: sh .github/formula.sh "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" dist > recdr.rb
+      - run: cat recdr.rb
+      - run: ruby -c recdr.rb
+
+  # Every step here is safe to run twice, so a run that failed on a network error can be
+  # re-run as it is.
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # crates.io trusted publishing swaps this for a short-lived token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: version and paths
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "DIST=$RUNNER_TEMP/dist" >> "$GITHUB_ENV"
+      # Outside the checkout, so `cargo publish` sees a clean tree.
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$VERSION" > "$DIST/version.txt"
+          cp install.sh install.ps1 "$DIST/"
+          ls -l "$DIST"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --generate-notes "$DIST"/*
+      - uses: actions/checkout@v4
+        with:
+          repository: dzikrisyairozi/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Homebrew formula
+        run: |
+          sh .github/formula.sh "$VERSION" "$DIST" > tap/Formula/recdr.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/recdr.rb
+          git diff --cached --quiet || { git commit -m "recdr $VERSION" && git push origin HEAD:main; }
+          cd .. && rm -rf tap
+      - name: Rust 1.98
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - name: already on crates.io?
+        id: published
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A 'recdr-release (github.com/dzikrisyairozi/recdr)' "https://crates.io/api/v1/crates/recdr/$VERSION")
+          if [ "$code" = 200 ]; then echo exists=true; else echo exists=false; fi >> "$GITHUB_OUTPUT"
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        if: steps.published.outputs.exists == 'false'
+      - name: cargo publish
+        if: steps.published.outputs.exists == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked
