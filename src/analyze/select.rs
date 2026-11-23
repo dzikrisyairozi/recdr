@@ -51,34 +51,35 @@ pub fn fit(
     Some((new_width, scale(height, new_width, width).max(1)))
 }
 
-/// Paths to the frames, scaled down into `samples/` when wider than `max_width`.
+/// Paths to the frames, scaled down into `samples/` when wider than `max_width` or
+/// longer than `max_edge` on either edge.
 pub fn frame_refs(
     dir: &RecordingDir,
     entries: &[FrameEntry],
     max_width: Option<u32>,
+    max_edge: Option<u32>,
 ) -> Result<Vec<FrameRef>> {
     // `--every` on a still screen names one stored frame many times; scale it once.
     let mut scaled = std::collections::HashMap::<u32, std::path::PathBuf>::new();
     entries
         .iter()
         .map(|entry| {
-            let path = match max_width {
-                Some(_) if scaled.contains_key(&entry.index) => scaled[&entry.index].clone(),
-                Some(max) => {
-                    let image = dir.load_frame(entry)?;
-                    if image.width() > max {
-                        let height = (u64::from(image.height()) * u64::from(max)
-                            / u64::from(image.width()))
-                        .max(1) as u32;
-                        let path = dir.sample_path(entry, max)?;
-                        imageops::resize(&image, max, height, FilterType::Triangle).save(&path)?;
+            let path = if max_width.is_none() && max_edge.is_none() {
+                dir.frame_path(entry)
+            } else if let Some(path) = scaled.get(&entry.index) {
+                path.clone()
+            } else {
+                let image = dir.load_frame(entry)?;
+                match fit(image.width(), image.height(), max_width, max_edge) {
+                    Some((width, height)) => {
+                        let path = dir.sample_path(entry, width)?;
+                        imageops::resize(&image, width, height, FilterType::Triangle)
+                            .save(&path)?;
                         scaled.insert(entry.index, path.clone());
                         path
-                    } else {
-                        dir.frame_path(entry)
                     }
+                    None => dir.frame_path(entry),
                 }
-                None => dir.frame_path(entry),
             };
             Ok(FrameRef {
                 t_ms: entry.t_ms,
@@ -91,7 +92,7 @@ pub fn frame_refs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::StopReason;
+    use crate::model::{Frame, StopReason};
 
     fn manifest() -> Manifest {
         Manifest {
@@ -128,6 +129,38 @@ mod tests {
         assert_eq!(fit(1080, 2400, Some(1024), None), Some((1024, 2275)));
         assert_eq!(fit(320, 240, Some(1024), Some(2000)), None);
         assert_eq!(fit(3000, 1000, None, Some(2000)), Some((2000, 666)));
+    }
+
+    #[test]
+    fn frame_refs_caps_a_tall_frame() {
+        let out = std::env::temp_dir().join(format!("recdr-unit-{}-refs-tall", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        let dir = RecordingDir::create(&out, 0).unwrap();
+        let mut writer = dir.frame_writer(1080, 2400).unwrap();
+        let rgba = [128, 128, 128, 255].repeat(1080 * 2400);
+        writer
+            .push(
+                Frame {
+                    width: 1080,
+                    height: 2400,
+                    rgba,
+                },
+                0,
+            )
+            .unwrap();
+        let entries = writer.finish();
+
+        let capped = frame_refs(&dir, &entries, Some(1024), Some(2000)).unwrap();
+        let capped = &capped[0].path;
+        assert!(capped.parent().unwrap().ends_with("samples"), "{capped:?}");
+        assert_eq!(image::image_dimensions(capped).unwrap(), (900, 2000));
+
+        let wide = frame_refs(&dir, &entries, Some(1024), None).unwrap();
+        let wide = &wide[0].path;
+        assert_eq!(image::image_dimensions(wide).unwrap(), (1024, 2275));
+        // Two sizes, two files: neither call overwrites the other's sample.
+        assert_ne!(capped, wide);
+        assert_eq!(image::image_dimensions(capped).unwrap(), (900, 2000));
     }
 
     #[test]

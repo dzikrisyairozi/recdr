@@ -211,7 +211,7 @@ fn finalize(
     let diffs = analyze::run(dir, &manifest)?;
     let contact_sheet = analyze::sheet::contact_sheet(dir, &manifest, &diffs)?;
     let keyframes = analyze::select::select(&manifest, &diffs, &FrameSelection::Keyframes);
-    let keyframes = analyze::select::frame_refs(dir, &keyframes, None)?;
+    let keyframes = analyze::select::frame_refs(dir, &keyframes, None, None)?;
     let gif = if state.options.formats.contains(&Format::Gif) {
         encode::gif::encode(dir, &manifest, None, &dir.gif_path())?;
         Some(dir.gif_path())

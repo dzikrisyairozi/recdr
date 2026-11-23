@@ -14,7 +14,7 @@ use tokio::runtime as tokio_rt;
 
 use crate::control;
 use crate::error::{self, Error};
-use crate::model::FrameRef;
+use crate::model::{FrameRef, MAX_IMAGE_EDGE};
 use crate::request::{self, ExportRequest, RecordRequest};
 
 const MAX_FRAMES: usize = 8;
@@ -71,7 +71,7 @@ struct FramesParams {
     every: Option<String>,
     /// The frames where the screen changed
     keyframes: Option<bool>,
-    /// Scale wider frames down to this width; default 1024
+    /// Scale wider frames down to this width; default 1024. Images are also capped at 2000 px on each edge
     max_width: Option<u32>,
     /// Output root; default .recdr in the server's working directory
     out: Option<PathBuf>,
@@ -207,6 +207,7 @@ impl RecdrServer {
                 &params.id,
                 &selection,
                 Some(max_width),
+                Some(MAX_IMAGE_EDGE),
                 Some(MAX_FRAMES),
             )
         });
