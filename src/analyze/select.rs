@@ -131,18 +131,19 @@ mod tests {
         assert_eq!(fit(3000, 1000, None, Some(2000)), Some((2000, 666)));
     }
 
+    // A tenth of a 1080 by 2400 phone screen: full-size PNGs took 6 s in a debug build.
     #[test]
     fn frame_refs_caps_a_tall_frame() {
         let out = std::env::temp_dir().join(format!("recdr-unit-{}-refs-tall", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         let dir = RecordingDir::create(&out, 0).unwrap();
-        let mut writer = dir.frame_writer(1080, 2400).unwrap();
-        let rgba = [128, 128, 128, 255].repeat(1080 * 2400);
+        let mut writer = dir.frame_writer(108, 240).unwrap();
+        let rgba = [128, 128, 128, 255].repeat(108 * 240);
         writer
             .push(
                 Frame {
-                    width: 1080,
-                    height: 2400,
+                    width: 108,
+                    height: 240,
                     rgba,
                 },
                 0,
@@ -150,17 +151,17 @@ mod tests {
             .unwrap();
         let entries = writer.finish();
 
-        let capped = frame_refs(&dir, &entries, Some(1024), Some(2000)).unwrap();
+        let capped = frame_refs(&dir, &entries, Some(100), Some(200)).unwrap();
         let capped = &capped[0].path;
         assert!(capped.parent().unwrap().ends_with("samples"), "{capped:?}");
-        assert_eq!(image::image_dimensions(capped).unwrap(), (900, 2000));
+        assert_eq!(image::image_dimensions(capped).unwrap(), (90, 200));
 
-        let wide = frame_refs(&dir, &entries, Some(1024), None).unwrap();
+        let wide = frame_refs(&dir, &entries, Some(100), None).unwrap();
         let wide = &wide[0].path;
-        assert_eq!(image::image_dimensions(wide).unwrap(), (1024, 2275));
+        assert_eq!(image::image_dimensions(wide).unwrap(), (100, 222));
         // Two sizes, two files: neither call overwrites the other's sample.
         assert_ne!(capped, wide);
-        assert_eq!(image::image_dimensions(capped).unwrap(), (900, 2000));
+        assert_eq!(image::image_dimensions(capped).unwrap(), (90, 200));
     }
 
     #[test]

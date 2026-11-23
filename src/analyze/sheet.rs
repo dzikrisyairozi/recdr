@@ -120,19 +120,22 @@ mod tests {
     }
 
     /// A sheet of `count` keyframes of `width` by `height`, 100 ms apart, each its own shade.
+    /// The layout reads only the manifest size, so the stored frames are a tenth of it:
+    /// full-size PNGs made the portrait test take 20 s in a debug build.
     fn sheet_of(width: u32, height: u32, count: u64, marks: Vec<Mark>, name: &str) -> RgbaImage {
         let out = std::env::temp_dir().join(format!("recdr-unit-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         let dir = RecordingDir::create(&out, 0).unwrap();
-        let mut writer = dir.frame_writer(width, height).unwrap();
+        let (stored_width, stored_height) = ((width / 10).max(1), (height / 10).max(1));
+        let mut writer = dir.frame_writer(stored_width, stored_height).unwrap();
         for i in 0..count {
             let shade = (i * 20) as u8;
-            let rgba = [shade, shade, shade, 255].repeat((width * height) as usize);
+            let rgba = [shade, shade, shade, 255].repeat((stored_width * stored_height) as usize);
             writer
                 .push(
                     Frame {
-                        width,
-                        height,
+                        width: stored_width,
+                        height: stored_height,
                         rgba,
                     },
                     i * 100,
