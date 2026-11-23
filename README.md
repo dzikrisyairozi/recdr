@@ -16,6 +16,7 @@ English · <a href="README.zh-CN.md">简体中文</a>
 [![crates.io](https://img.shields.io/crates/v/recdr)](https://crates.io/crates/recdr)
 
 </div>
+  https://github.com/user-attachments/assets/b903fcf5-294d-473d-a2af-de5e2ef5af6f
 
 recdr records a window, a screen region or a monitor on Windows and macOS, or a browser tab through the Chrome DevTools Protocol on Windows, Linux and macOS, and leaves files an AI agent can read: a GIF or MP4 for people, and for the agent a contact sheet of the moments where the screen changed, a per-frame change log and the stored frames as PNG. Agents drive it through a CLI that prints JSON, or through an MCP server.
 
