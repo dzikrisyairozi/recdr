@@ -75,15 +75,17 @@ jobs:
           set -euo pipefail
           rel=$RUNNER_TEMP/rel
           bin=$RUNNER_TEMP/bin
-          mkdir -p "$rel/download/v0.1.0" "$rel/latest/download" stage
+          # The version this build reports, so the scenarios pass after a version bump.
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          mkdir -p "$rel/download/v$v" "$rel/latest/download" stage
           # The Linux runner's build is glibc, packed under the musl name the script asks for.
           cp target/release/recdr LICENSE README.md stage/
-          archive="$rel/download/v0.1.0/recdr-$TARGET.tar.gz"
+          archive="$rel/download/v$v/recdr-$TARGET.tar.gz"
           tar -czf "$archive" -C stage .
           if command -v sha256sum >/dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
           (cd "$(dirname "$archive")" && $sum "recdr-$TARGET.tar.gz" > "recdr-$TARGET.tar.gz.sha256")
-          cp install.sh "$rel/download/v0.1.0/"
-          echo 0.1.0 > "$rel/latest/download/version.txt"
+          cp install.sh "$rel/download/v$v/"
+          echo $v > "$rel/latest/download/version.txt"
           python3 -m http.server 8765 --directory "$rel" >/dev/null 2>&1 &
           server=$!
           trap 'kill $server' EXIT
@@ -92,7 +94,7 @@ jobs:
 
           echo "--- fresh install"
           sh install.sh > out.txt 2>&1; cat out.txt
-          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+          "$bin/recdr" --version | grep -qx "recdr $v"
           [ "$(tail -n1 out.txt)" = 'claude mcp add recdr -- recdr mcp' ]
 
           echo "--- second install"
@@ -101,13 +103,13 @@ jobs:
 
           echo "--- pinned version, no version.txt"
           rm "$rel/latest/download/version.txt"
-          RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; cat out.txt
-          "$bin/recdr" --version | grep -qx 'recdr 0.1.0'
+          RECDR_VERSION=$v sh install.sh > out.txt 2>&1; cat out.txt
+          "$bin/recdr" --version | grep -qx "recdr $v"
 
           echo "--- corrupted archive"
           before=$(ls -la "$bin")
           echo junk > "$archive"
-          set +e; RECDR_VERSION=0.1.0 sh install.sh > out.txt 2>&1; code=$?; set -e; cat out.txt
+          set +e; RECDR_VERSION=$v sh install.sh > out.txt 2>&1; code=$?; set -e; cat out.txt
           [ "$code" -eq 1 ]
           grep -q 'does not match' out.txt
           [ "$(ls -la "$bin")" = "$before" ]
@@ -138,14 +140,16 @@ jobs:
           }
           $rel = "$env:RUNNER_TEMP\rel"
           $bin = "$env:RUNNER_TEMP\bin"
-          $dl = "$rel\download\v0.1.0"
+          # The version this build reports, so the scenarios pass after a version bump.
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $dl = "$rel\download\v$v"
           New-Item -ItemType Directory -Force $dl, "$rel\latest\download", stage | Out-Null
           Copy-Item target\release\recdr.exe, LICENSE, README.md stage\
           $a = 'recdr-x86_64-pc-windows-msvc.zip'
           Compress-Archive -Path stage\* -DestinationPath "$dl\$a"
           "$((Get-FileHash -Algorithm SHA256 "$dl\$a").Hash.ToLower())  $a" | Set-Content -Encoding ascii "$dl\$a.sha256"
           Copy-Item install.ps1 $dl
-          '0.1.0' | Set-Content -Encoding ascii "$rel\latest\download\version.txt"
+          $v | Set-Content -Encoding ascii "$rel\latest\download\version.txt"
           $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--directory', $rel -PassThru -WindowStyle Hidden
           try {
             foreach ($i in 1..50) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/latest/download/version.txt | Out-Null; break } catch { Start-Sleep -Milliseconds 200 } }
@@ -155,7 +159,7 @@ jobs:
             Write-Host '--- fresh install'
             Run-Install
             Assert ($code -eq 0) 'fresh install exits 0'
-            Assert ((& "$bin\recdr.exe" --version) -eq 'recdr 0.1.0') 'installed version'
+            Assert ((& "$bin\recdr.exe" --version) -eq "recdr $v") 'installed version'
             Assert ((Get-Content out.txt)[-1] -eq 'claude mcp add recdr -- recdr mcp') 'last line'
 
             Write-Host '--- second install'
@@ -178,7 +182,7 @@ jobs:
 
             Write-Host '--- pinned version, no version.txt'
             Remove-Item "$rel\latest\download\version.txt"
-            $env:RECDR_VERSION = '0.1.0'
+            $env:RECDR_VERSION = $v
             Run-Install
             Assert ($code -eq 0) 'pinned install exits 0'
 
