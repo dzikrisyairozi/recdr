@@ -71,9 +71,11 @@ pub fn frame_refs(
             } else if let Some(path) = scaled.get(&entry.index) {
                 path.clone()
             } else {
-                let image = dir.load_frame(entry)?;
-                match fit(image.width(), image.height(), max_width, max_edge) {
+                // The header gives the size; decode only a frame that needs scaling.
+                let (width, height) = image::image_dimensions(dir.frame_path(entry))?;
+                match fit(width, height, max_width, max_edge) {
                     Some((width, height)) => {
+                        let image = dir.load_frame(entry)?;
                         let path = dir.sample_path(entry, width)?;
                         imageops::resize(&image, width, height, FilterType::Triangle)
                             .save(&path)?;
