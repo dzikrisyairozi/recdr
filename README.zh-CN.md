@@ -19,7 +19,9 @@
 
 https://github.com/user-attachments/assets/b903fcf5-294d-473d-a2af-de5e2ef5af6f
 
-recdr 可以在 Windows 和 macOS 上录制一个窗口、一块屏幕区域或一台显示器，也可以在 Windows、Linux 和 macOS 上通过 Chrome DevTools Protocol 录制一个浏览器标签页，并留下 AI agent 能读取的文件：给人看的 GIF 或 MP4；给 agent 看的是一张由画面发生变化的时刻组成的缩略图总览（contact sheet）、逐帧的变化记录，以及以 PNG 格式保存的帧。agent 通过输出 JSON 的 CLI 或 MCP 服务器来控制它。
+recdr 可以录制一个窗口、一块区域、一台显示器或一个 Chrome 标签页。你得到 GIF 或 MP4。**你的 agent 得到画面发生变化的那些帧**，外加一张缩略图总览（contact sheet）和一份变化记录，通过 CLI 或 MCP 获取。
+
+窗口、区域和显示器支持 Windows 和 macOS；浏览器标签页支持 Windows、macOS 和 Linux。
 
 做这个工具的原因是：浏览器工具只能给 agent 截图，给不了录像。有了 recdr，agent 可以开始录制，运行测试或点击走完一个流程，停止录制，然后查看发生了什么。
 

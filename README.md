@@ -19,7 +19,9 @@ English · <a href="README.zh-CN.md">简体中文</a>
 
 https://github.com/user-attachments/assets/b903fcf5-294d-473d-a2af-de5e2ef5af6f
 
-recdr records a window, a screen region or a monitor on Windows and macOS, or a browser tab through the Chrome DevTools Protocol on Windows, Linux and macOS, and leaves files an AI agent can read: a GIF or MP4 for people, and for the agent a contact sheet of the moments where the screen changed, a per-frame change log and the stored frames as PNG. Agents drive it through a CLI that prints JSON, or through an MCP server.
+recdr records a window, a region, a monitor or a Chrome tab. You get a GIF or MP4. **Your agent gets the frames that changed**, plus a contact sheet and a change log, over a CLI or MCP.
+
+Windows and macOS for windows, regions and monitors. Windows, macOS and Linux for browser tabs.
 
 It exists because browser tools give an agent screenshots, not recordings. With recdr an agent can start a recording, run a test or click through a flow, stop, and look at what happened.
 
